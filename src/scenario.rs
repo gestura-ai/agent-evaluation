@@ -35,10 +35,8 @@ impl EvalScenarioSuite {
     /// # Errors
     /// Returns an error string if the file cannot be read or the JSON is malformed.
     pub fn load_from_path(path: &Path) -> Result<Self, String> {
-        let json = fs::read_to_string(path)
-            .map_err(|e| format!("{}: {e}", path.display()))?;
-        serde_json::from_str(&json)
-            .map_err(|e| format!("{}: {e}", path.display()))
+        let json = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        serde_json::from_str(&json).map_err(|e| format!("{}: {e}", path.display()))
     }
 
     /// Return only the scenarios whose IDs appear in `ids`. If `ids` is empty, returns all.
