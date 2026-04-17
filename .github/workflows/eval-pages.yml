@@ -51,7 +51,9 @@ permissions:
 
 concurrency:
   group: eval-pages-deploy
-  cancel-in-progress: true
+  # Never cancel an in-progress run — the suite takes 4-6 hours and killing it
+  # mid-run wastes all accumulated work.  Incoming runs queue instead.
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -65,8 +67,11 @@ jobs:
     # bookworm-compatible name that the gestura binary links against at runtime.
     runs-on: ubuntu-22.04
     # Full suite: 3 families × 3 modes = 9 profiles × N scenarios × 3 variations
-    # × 3 trials, with 3 s between each variation call.  Allow up to 6 hours.
-    timeout-minutes: 360
+    # × 3 trials, with 3 s between each variation call.  Allow up to ~6 hours.
+    # 350 min leaves a 10-minute buffer before GitHub's 360-min hard kill for
+    # hosted runners — gives the harness time to flush partial results cleanly
+    # instead of being force-terminated with no output.
+    timeout-minutes: 350
     env:
       # ── Mirror the Containerfile runtime env vars ────────────────────────────
       GESTURA_DISABLE_KEYCHAIN: "1"
@@ -223,7 +228,10 @@ jobs:
             --variation-delay-ms "${{ steps.params.outputs.delay }}"
 
       # ── Prepare GitHub Pages artifact ───────────────────────────────────────
+      # Run even on eval failure — the orchestrator writes each per-agent JSON
+      # immediately on completion, so partial results exist and are worth keeping.
       - name: Prepare Pages artifact
+        if: always()
         run: |
           set -euo pipefail
           # Suppress Jekyll processing — the HTML is already rendered.
@@ -293,6 +301,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Pages artifact
+        if: always()
         uses: actions/upload-pages-artifact@v3
         with:
           path: eval-results
