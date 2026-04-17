@@ -106,7 +106,9 @@ rm -f "$NOTARIZE_ZIP"
 
 log_info "Verifying code signature …"
 codesign --verify --deep --strict --verbose=2 "$BINARY_PATH"
-spctl --assess --type exec --verbose=2 "$BINARY_PATH"
+# spctl --assess is for .app bundles; plain CLI binaries always return exit 3
+# ("does not seem to be an app") even when correctly signed and notarized.
+# codesign --verify above is the authoritative check for CLI tools.
 log_info "Signature OK"
 
 # ── Package ───────────────────────────────────────────────────────────────────
