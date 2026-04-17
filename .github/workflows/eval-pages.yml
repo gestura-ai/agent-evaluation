@@ -1,10 +1,13 @@
 name: Eval Pages
 
 on:
-  # Deploy after every published release — same pattern as gestura-app's
-  # rustdoc-pages.yml.  The `release` event runs in the context of the tag /
-  # target-commitish directly, which the github-pages environment accepts
-  # without branch-restriction gymnastics.
+  # Triggered by gestura-app's release workflow via repository_dispatch.
+  # Runs on main (satisfies the github-pages environment branch rule) and
+  # receives the new tag in client_payload.tag.
+  repository_dispatch:
+    types: [gestura-released]
+  # Deploy after every published release in this repo — the release event
+  # runs in the tag context (v*), which the github-pages environment also accepts.
   release:
     types: [published]
   # Allow manual re-runs: re-evaluate after an agent update, test a specific
@@ -141,8 +144,14 @@ jobs:
       # ── Gestura CLI via official install script (mirrors Containerfile) ─────
       - name: Install gestura CLI
         env:
-          # Resolve tag: workflow input → repo variable → Containerfile default.
-          GESTURA_TAG: ${{ github.event.inputs.gestura_tag || vars.GESTURA_CLI_TAG || 'v0.11.0' }}
+          # Resolve tag: cross-repo dispatch → workflow input → repo variable → hardcoded default.
+          GESTURA_TAG: >-
+            ${{
+              github.event.client_payload.tag ||
+              github.event.inputs.gestura_tag ||
+              vars.GESTURA_CLI_TAG ||
+              'v0.11.1'
+            }}
         run: |
           set -euo pipefail
           echo "Installing gestura ${GESTURA_TAG}"
