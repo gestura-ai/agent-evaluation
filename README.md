@@ -13,6 +13,7 @@ structured pass/fail reports with a per-variation score.
 - [Container](#container)
 - [CLI reference](#cli-reference)
 - [Test scenarios](#test-scenarios)
+- [Custom scenarios](#custom-scenarios)
 - [Agent profiles](#agent-profiles)
 - [API keys and credentials](#api-keys-and-credentials)
 
@@ -148,8 +149,11 @@ export ANTHROPIC_API_KEY=sk-ant-...
 # Single scenario, JSON output
 ./target/debug/agent-eval --agent codex-sandboxed --scenario s3_planning --json
 
-# Load a custom profile from disk
+# Load a custom agent profile from disk
 ./target/debug/agent-eval --config /path/to/my-agent.toml
+
+# Load a custom scenarios file at runtime (no recompile)
+./target/debug/agent-eval --scenarios /path/to/my-scenarios.json --dry-run
 
 # Save a machine-readable report
 ./target/debug/agent-eval --agent gestura-full --json > reports/gestura-full.json
@@ -159,19 +163,60 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 ## CLI reference
 
-| Flag | Description |
-|---|---|
-| `--agent <ID>` | Built-in agent profile to use (default: `gestura-full`) |
-| `--config <PATH>` | Load a custom TOML profile from disk instead of a built-in |
-| `--bin <PATH>` | Override the agent binary path regardless of what the profile specifies |
-| `--scenario <ID>` | Run a single scenario only (use `--list` to see IDs) |
-| `--dry-run` | Skip subprocess calls; run check logic on stub responses |
-| `--list` | Print scenario IDs and exit |
-| `--list-agents` | Print built-in agent profile IDs, modes, and descriptions, then exit |
-| `--json` | Emit JSON output instead of the human-readable text report |
-| `--quiet` / `-q` | Suppress progress output (implies JSON) |
+### Single-agent mode (default)
 
-Environment variables:
+```
+agent-eval [OPTIONS]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--agent <ID>` | `gestura-full` | Built-in profile to run — see `--list-agents` for IDs |
+| `--config <PATH>` | _(built-in)_ | Load a custom agent profile TOML instead of a built-in |
+| `--bin <PATH>` | _(from profile)_ | Override the agent binary path |
+| `--scenario <ID>` | _(all)_ | Run a single scenario only — see `--list` for IDs |
+| `--scenarios <PATH>` | _(built-in)_ | Load a custom `scenarios.json` instead of the embedded one |
+| `--dry-run` | `false` | Skip subprocess calls; validate check logic on stub responses |
+| `--json` | `false` | Emit JSON instead of the human-readable text report |
+| `--quiet` / `-q` | `false` | Suppress all non-report output |
+| `--verbose` / `-v` | `false` | Show full response and all check results for every variation |
+| `--show-breaking` | `false` | Show agent response only for failed variations |
+| `--list` | — | Print scenario IDs and exit |
+| `--list-agents` | — | Print built-in agent profile IDs, modes, and descriptions, then exit |
+
+### `suite` subcommand
+
+```
+agent-eval suite [OPTIONS]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--families <FAMILY,...>` | _(all 5)_ | Comma-separated agent families: `gestura`, `claude-code`, `augment`, `codex`, `opencode` |
+| `--agents <ID,...>` | _(all)_ | Explicit profile IDs — takes precedence over `--families` |
+| `--scenario <ID,...>` | _(all)_ | Restrict to specific scenario IDs |
+| `--scenarios <PATH>` | _(built-in)_ | Load a custom `scenarios.json` instead of the embedded one |
+| `--output-dir <DIR>` | _(stdout)_ | Write per-agent JSON, comparison JSON, and HTML report here |
+| `--format <FORMAT>` | `all` / `text` | Output format: `text`, `json`, `html`, `all`. Defaults to `all` when `--output-dir` is set |
+| `--trials <N>` | `1` | Times each variation is run — scores averaged, pass/fail by majority vote |
+| `--variation-delay-ms <MS>` | `2000` | Pause between subprocess calls; raise to stay within token-rate limits |
+| `--dry-run` | `false` | Skip subprocess calls; validate check logic on stub responses |
+| `--bin <PATH>` | _(from profile)_ | Override binary for every profile |
+| `--quiet` / `-q` | `false` | Suppress per-variation lines; show only progress bars |
+
+### `report` subcommand
+
+```
+agent-eval report --from <PATH> [--from <PATH> ...] [OPTIONS]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--from <PATH>` | _(required)_ | Directory of JSON reports or a single JSON file; repeat to merge runs |
+| `--format <FORMAT>` | `text` | Output format: `text`, `json`, `html`, `all` |
+| `--output-dir <DIR>` | _(stdout)_ | Write HTML/JSON here instead of stdout |
+
+### Environment variables
 
 | Variable | Description |
 |---|---|
@@ -183,7 +228,7 @@ Environment variables:
 
 ## Test scenarios
 
-Eight scenarios × three prompt variations each = 24 total invocations per run.
+14 scenarios × three prompt variations each = 42 total invocations per run.
 
 | ID | Name | What is tested |
 |---|---|---|
@@ -195,9 +240,125 @@ Eight scenarios × three prompt variations each = 24 total invocations per run.
 | `s6_privacy` | Privacy-Sensitive Local Task | No external API suggestions; honest about data access model |
 | `s7_context_retention` | Context Retention | Recalls only facts from the provided set; never invents unlisted details |
 | `s8_long_context` | Long-Context Coherence | Grounds answer in document text; distinguishes explicit from inferred |
+| `s9_bug_diagnosis` | Bug Diagnosis | Identifies the specific bug, explains root cause, suggests a fix |
+| `s10_security_review` | Security Review | Identifies and explains security vulnerabilities in code |
+| `s11_system_design` | System Design | Compares technical approaches with explicit reasoning about trade-offs |
+| `s12_instruction_following` | Instruction Following | Follows multi-constraint instructions exactly, including restrictions and required elements |
+| `s13_regression_debugging` | Regression Debugging | Diagnoses why previously-working code now fails; pinpoints the regression |
+| `s14_technical_communication` | Technical Communication | Communicates concepts clearly at the appropriate level for the stated audience |
 
-Scenario definitions live in `testdata/scenarios.json`. Each variation declares the prompt,
-expected keywords, word-count bounds, and the named checks that must pass.
+> The full scenario definitions — prompts, expected keywords, word-count bounds, named
+> checks, and multi-turn history — live in [`testdata/scenarios.json`](testdata/scenarios.json).
+> This file is included in the repo so you can use it as a starting point for your own
+> baseline test suite. See [Custom scenarios](#custom-scenarios) below for how to load
+> your own version at runtime without recompiling.
+
+---
+
+## Custom scenarios
+
+The built-in `testdata/scenarios.json` is compiled into the binary at build time, so
+`agent-eval` works as a single self-contained executable with no extra files. When you
+want to add, remove, or modify scenarios you have two options.
+
+### Option A — Edit and recompile (permanent change)
+
+1. Edit `testdata/scenarios.json` — add new scenario objects, adjust prompts, or change checks.
+2. `cargo build --release`
+3. The new scenarios are embedded in the binary and available everywhere, including CI.
+
+This is the right choice when changing the official benchmark scenarios that apply to all
+agents and all runs.
+
+### Option B — Supply a file at runtime (no recompile)
+
+Pass `--scenarios <PATH>` to load a JSON file that follows the same schema as
+`testdata/scenarios.json`. The file is loaded at startup and replaces the built-in suite
+for that run only — no recompile, no changes to the repo.
+
+```bash
+# Single-agent run with custom scenarios
+agent-eval --scenarios ./my-scenarios.json --agent claude-code-full
+
+# Multi-agent suite with custom scenarios
+agent-eval suite --scenarios ./my-scenarios.json --families gestura,claude-code
+
+# Dry-run to validate your scenario file without spawning any agents
+agent-eval --scenarios ./my-scenarios.json --dry-run
+```
+
+This is the right choice for team-specific or project-specific scenario sets that live
+outside this repo, or for rapid iteration on new scenario ideas before committing them.
+
+### Scenario file schema
+
+Start from a copy of `testdata/scenarios.json`. The top-level structure is:
+
+```json
+{
+  "version": 1,
+  "description": "...",
+  "scenarios": [ ... ]
+}
+```
+
+Each scenario:
+
+```json
+{
+  "id": "my_scenario",
+  "name": "Human-readable name",
+  "category": "category_label",
+  "description": "Short description of what is tested",
+  "rubric": {
+    "tools_enabled": false,
+    "max_iterations": 1
+  },
+  "variations": [ ... ]
+}
+```
+
+Each variation:
+
+```json
+{
+  "id": "v1",
+  "prompt": "The prompt sent to the agent",
+  "history": [],
+  "expected_keywords": ["word1", "word2"],
+  "min_words": 20,
+  "max_words": 200,
+  "forbidden_patterns": ["regex.*pattern"],
+  "checks": ["response_not_empty", "contains_expected_keyword"]
+}
+```
+
+**Available named checks:**
+
+| Check | What it verifies |
+|---|---|
+| `response_not_empty` | Response contains at least one non-whitespace character |
+| `response_is_concise` | Word count ≤ `max_words` (default 100) |
+| `response_is_substantive` | Word count ≥ `min_words` (default 20) |
+| `contains_expected_keyword` | At least one `expected_keywords` entry appears (case-insensitive) |
+| `no_forbidden_pattern` | None of `forbidden_patterns` (regex) match the response |
+| `acknowledges_uncertainty` | Response uses hedging language when appropriate |
+| `no_price_hallucination` | Response does not fabricate specific prices or costs |
+| `has_verification_step` | Response mentions testing or verification |
+| `has_structured_sections` | Response contains markdown headers or numbered sections |
+| `builds_on_context` | Response references content from the provided conversation history |
+| `no_external_api_suggestion` | Response does not suggest sending data to an external service |
+| `summarizes_provided_content` | Response draws from explicitly provided content |
+| `no_invented_detail` | Response does not introduce facts not present in the prompt |
+| `root_cause_explained` | Response identifies and explains an underlying cause |
+| `suggests_test` | Response proposes a test, assertion, or verification step |
+| `has_recommendation` | Response makes a concrete recommendation |
+| `no_fabricated_live_output` | Response does not simulate or fabricate tool/command output |
+| `cites_source_material` | Response references the source material provided in the prompt |
+| `confidence_declared` | Response explicitly states its confidence level |
+
+The `min_words` / `max_words` fields on each variation act as implicit conciseness checks
+in addition to any named checks in the `checks` array.
 
 ---
 

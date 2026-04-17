@@ -4,6 +4,8 @@
 //! maps to one of the 8 standardised test categories; each has 3 [`EvalVariation`]s
 //! that cover different phrasings of the same activity.
 
+use std::{fs, path::Path};
+
 use serde::{Deserialize, Serialize};
 
 /// Embedded scenario definitions — compiled into the binary so the harness is self-contained.
@@ -26,6 +28,17 @@ impl EvalScenarioSuite {
         serde_json::from_str(BUILTIN_SCENARIOS_JSON).expect(
             "agent-evaluation: embedded scenarios.json is malformed — this is a build-time bug",
         )
+    }
+
+    /// Load from a JSON file on disk. The file must match the `scenarios.json` schema.
+    ///
+    /// # Errors
+    /// Returns an error string if the file cannot be read or the JSON is malformed.
+    pub fn load_from_path(path: &Path) -> Result<Self, String> {
+        let json = fs::read_to_string(path)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        serde_json::from_str(&json)
+            .map_err(|e| format!("{}: {e}", path.display()))
     }
 
     /// Return only the scenarios whose IDs appear in `ids`. If `ids` is empty, returns all.

@@ -75,6 +75,11 @@ struct Cli {
     #[arg(long = "bin", value_name = "PATH", env = "GESTURA_BIN")]
     bin_override: Option<PathBuf>,
 
+    /// Path to a custom scenarios JSON file. Defaults to the built-in scenarios
+    /// embedded in the binary (testdata/scenarios.json in the source tree).
+    #[arg(long, value_name = "PATH")]
+    scenarios: Option<PathBuf>,
+
     /// Run only this scenario (use --list to see IDs).
     #[arg(long, value_name = "ID")]
     scenario: Option<String>,
@@ -138,6 +143,11 @@ struct SuiteArgs {
     /// Takes precedence over --families.
     #[arg(long, value_delimiter = ',', value_name = "AGENT_ID")]
     agents: Vec<String>,
+
+    /// Path to a custom scenarios JSON file. Defaults to the built-in scenarios
+    /// embedded in the binary (testdata/scenarios.json in the source tree).
+    #[arg(long, value_name = "PATH")]
+    scenarios: Option<PathBuf>,
 
     /// Restrict to specific scenario IDs, comma-separated (e.g. `s1_simple_query,s3_planning`).
     #[arg(long, value_delimiter = ',', value_name = "ID")]
@@ -224,7 +234,7 @@ fn main() {
         .with_writer(std::io::stderr)
         .init();
 
-    let suite = EvalScenarioSuite::load_builtin();
+    let suite = load_suite(args.scenarios.as_deref());
 
     // ── Informational flags (always available, exit immediately) ─────────────
     if args.list {
@@ -262,9 +272,28 @@ fn main() {
 
     // ── Dispatch to subcommand ────────────────────────────────────────────────
     match args.command {
-        Some(SubCommand::Suite(suite_args)) => run_suite(suite_args, suite),
+        Some(SubCommand::Suite(suite_args)) => run_suite(suite_args),
         Some(SubCommand::Report(report_args)) => run_report(report_args),
         None => run_single_agent(args, suite),
+    }
+}
+
+// ─── Suite / scenario loader ──────────────────────────────────────────────────
+
+fn load_suite(path: Option<&std::path::Path>) -> EvalScenarioSuite {
+    match path {
+        Some(p) => match EvalScenarioSuite::load_from_path(p) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!(
+                    "{} failed to load scenarios '{}': {e}",
+                    "error:".red().bold(),
+                    p.display()
+                );
+                std::process::exit(1);
+            }
+        },
+        None => EvalScenarioSuite::load_builtin(),
     }
 }
 
@@ -441,6 +470,9 @@ fn run_single_agent(args: Cli, suite: EvalScenarioSuite) {
         if let Some(ref id) = args.scenario {
             println!("  Filter  : scenario {}", id.cyan());
         }
+        if let Some(ref path) = args.scenarios {
+            println!("  Scenarios: {}", path.display().to_string().cyan());
+        }
         println!();
     }
 
@@ -470,7 +502,8 @@ fn run_single_agent(args: Cli, suite: EvalScenarioSuite) {
 
 // ─── `suite` subcommand ───────────────────────────────────────────────────────
 
-fn run_suite(args: SuiteArgs, suite: EvalScenarioSuite) {
+fn run_suite(args: SuiteArgs) {
+    let suite = load_suite(args.scenarios.as_deref());
     // Resolve profiles from selector.
     let selector = ProfileSelector {
         agent_ids: args.agents.clone(),
@@ -547,7 +580,10 @@ fn run_suite(args: SuiteArgs, suite: EvalScenarioSuite) {
             println!("  Agents   : {}", args.agents.join(", ").cyan());
         }
         if !args.scenario.is_empty() {
-            println!("  Scenarios: {}", args.scenario.join(", ").cyan());
+            println!("  Filter   : {}", args.scenario.join(", ").cyan());
+        }
+        if let Some(ref path) = args.scenarios {
+            println!("  Scenarios: {}", path.display().to_string().cyan());
         }
         if let Some(t) = args.trials.filter(|&n| n > 1) {
             println!("  Trials   : {} per variation", t.to_string().yellow());
