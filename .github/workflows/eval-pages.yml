@@ -72,7 +72,6 @@ jobs:
       RUST_LOG: "warn"
       # ── API keys — secrets are only accessible at job/step level, not
       # workflow level. Defined here so every step and subprocess inherits them.
-      GESTURA_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       GESTURA_ANTHROPIC_API_KEY: ${{ secrets.GESTURA_ANTHROPIC_API_KEY }}
 
