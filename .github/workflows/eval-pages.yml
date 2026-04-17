@@ -74,9 +74,18 @@ jobs:
       # workflow level. Defined here so every step and subprocess inherits them.
       GESTURA_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GESTURA_ANTHROPIC_API_KEY: ${{ secrets.GESTURA_ANTHROPIC_API_KEY }}
 
     steps:
+      - name: Verify required secrets
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "ERROR: ANTHROPIC_API_KEY is empty or not set."
+            echo "Add it at: Settings → Secrets and variables → Actions → Repository secrets"
+            exit 1
+          fi
+          echo "ANTHROPIC_API_KEY: set (${#ANTHROPIC_API_KEY} chars)"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -148,20 +157,6 @@ jobs:
 
       - name: Build agent-eval
         run: cargo build --release
-
-      # ── Codex config (mirrors entrypoint.sh) ────────────────────────────────
-      # Codex v0.120.0+ reads its API key from ~/.codex/config.toml rather than
-      # OPENAI_API_KEY alone.  Write the file here exactly as entrypoint.sh does
-      # so Codex profiles (if included in future runs) authenticate correctly.
-      - name: Configure Codex CLI
-        if: env.OPENAI_API_KEY != ''
-        run: |
-          mkdir -p "${CODEX_HOME}"
-          cat > "${CODEX_HOME}/config.toml" << TOML
-          forced_login_method = "api"
-          cli_auth_credentials_store = "file"
-          openai_api_key = "${OPENAI_API_KEY}"
-          TOML
 
       # ── Resolve runtime parameters ──────────────────────────────────────────
       - name: Resolve suite parameters
