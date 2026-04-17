@@ -62,6 +62,14 @@ env:
   # Controls where codex looks for config.toml, auth.json, and its state DB.
   CODEX_HOME: "/home/runner/.codex"
   RUST_LOG: "warn"
+  # ── API keys — job-level so every step and all spawned subprocesses inherit ─
+  # These must be defined here (not only at step level) to be visible to the
+  # agent CLI subprocesses that agent-eval spawns, and to the codex config step.
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  # gestura-* profiles read GESTURA_ANTHROPIC_API_KEY; fall back to the shared
+  # Anthropic key if a dedicated gestura secret is not configured.
+  GESTURA_ANTHROPIC_API_KEY: ${{ secrets.GESTURA_ANTHROPIC_API_KEY || secrets.ANTHROPIC_API_KEY }}
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
 jobs:
   run-eval:
@@ -153,8 +161,6 @@ jobs:
       # so Codex profiles (if included in future runs) authenticate correctly.
       - name: Configure Codex CLI
         if: env.OPENAI_API_KEY != ''
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           mkdir -p "${CODEX_HOME}"
           cat > "${CODEX_HOME}/config.toml" << TOML
@@ -179,13 +185,6 @@ jobs:
 
       # ── Run the full evaluation suite ───────────────────────────────────────
       - name: Run evaluation suite
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # gestura-* profiles read the GESTURA_ prefixed key; other CLIs use the
-          # bare key.  Fall back to ANTHROPIC_API_KEY if a dedicated gestura key
-          # is not configured (they may share the same account).
-          GESTURA_ANTHROPIC_API_KEY: ${{ secrets.GESTURA_ANTHROPIC_API_KEY || secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -euo pipefail
           mkdir -p eval-results
