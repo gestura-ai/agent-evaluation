@@ -78,12 +78,21 @@ jobs:
     steps:
       - name: Verify required secrets
         run: |
+          failed=0
           if [ -z "$ANTHROPIC_API_KEY" ]; then
             echo "ERROR: ANTHROPIC_API_KEY is empty or not set."
-            echo "Add it at: Settings → Secrets and variables → Actions → Repository secrets"
-            exit 1
+            failed=1
+          else
+            echo "ANTHROPIC_API_KEY: set (${#ANTHROPIC_API_KEY} chars)"
           fi
-          echo "ANTHROPIC_API_KEY: set (${#ANTHROPIC_API_KEY} chars)"
+          if [ -z "$GESTURA_ANTHROPIC_API_KEY" ]; then
+            echo "ERROR: GESTURA_ANTHROPIC_API_KEY is empty or not set."
+            echo "Add it at: Settings → Secrets and variables → Actions → Repository secrets"
+            failed=1
+          else
+            echo "GESTURA_ANTHROPIC_API_KEY: set (${#GESTURA_ANTHROPIC_API_KEY} chars)"
+          fi
+          if [ "$failed" -eq 1 ]; then exit 1; fi
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -137,10 +146,25 @@ jobs:
         run: |
           set -euo pipefail
           echo "Installing gestura ${GESTURA_TAG}"
+          # Run as root (via sudo) so the install script writes to /usr/local/bin,
+          # matching the Containerfile which also runs the install as root.
+          # Without sudo, the script falls back to ~/.local/bin which may not be
+          # on PATH for subsequent steps.
           curl -fsSL \
             https://raw.githubusercontent.com/gestura-ai/gestura-app/main/install/install.sh \
-            | bash -s -- --mode cli --tag "${GESTURA_TAG}" --require-verify
+            | sudo bash -s -- --mode cli --tag "${GESTURA_TAG}" --require-verify
+          which gestura
           gestura --version
+
+      # ── Smoke-test gestura authentication directly ──────────────────────────
+      # Run gestura outside of agent-eval to confirm the API key reaches it.
+      # If this fails with 401, the secret value is wrong or missing.
+      # If this passes but agent-eval later fails, the issue is in invocation.
+      - name: Smoke-test gestura authentication
+        run: |
+          set -euo pipefail
+          echo "Testing gestura auth (GESTURA_ANTHROPIC_API_KEY length: ${#GESTURA_ANTHROPIC_API_KEY})"
+          gestura exec "Reply with only the single word: OK"
 
       # ── Rust / agent-eval build ─────────────────────────────────────────────
       - name: Install Rust
