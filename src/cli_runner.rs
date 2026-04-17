@@ -391,6 +391,21 @@ impl CliEvalRunner {
             cmd.env(k, v);
         }
 
+        // Explicitly forward credential env vars from the calling process.
+        // Docker passes these the same way: -e KEY=value on every `docker run`.
+        // Explicit forwarding ensures they reach the subprocess regardless of
+        // how the outer runner (GitHub Actions, etc.) scopes its environment.
+        for key in &[
+            "ANTHROPIC_API_KEY",
+            "GESTURA_ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "AUGMENT_SESSION_AUTH",
+        ] {
+            if let Ok(val) = std::env::var(key) {
+                cmd.env(key, val);
+            }
+        }
+
         // Gestura-specific: disable tool execution when rubric says no tools.
         if !scenario.rubric.tools_enabled {
             cmd.env("GESTURA_TOOLS_ENABLED", "false");
