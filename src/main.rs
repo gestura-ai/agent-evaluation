@@ -44,13 +44,13 @@ use colored::Colorize;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 use agent_evaluation::{
+    CliEvalRunner, CliRunnerOptions, EvalScenarioSuite,
     comparison::ComparisonEngine,
-    config::{EvalConfig, BUILTIN_AGENT_IDS},
+    config::{BUILTIN_AGENT_IDS, EvalConfig},
     html_report,
     orchestrator::{MultiRunOrchestrator, ProfileSelector, SuiteRunPlan},
     progress::{ProgressCallback, ProgressEvent},
     report::EvalReport,
-    CliEvalRunner, CliRunnerOptions, EvalScenarioSuite,
 };
 
 // ─── Top-level CLI ────────────────────────────────────────────────────────────
@@ -63,7 +63,6 @@ struct Cli {
     command: Option<SubCommand>,
 
     // ── Single-agent flags (only used when no subcommand is given) ──────────
-
     /// Built-in agent profile (see --list-agents). Defaults to `gestura-full`.
     #[arg(long, value_name = "AGENT_ID", env = "GESTURA_EVAL_AGENT")]
     agent: Option<String>,
@@ -277,7 +276,11 @@ fn run_single_agent(args: Cli, suite: EvalScenarioSuite) {
         match EvalConfig::load_from_path(path) {
             Ok(cfg) => cfg,
             Err(e) => {
-                eprintln!("{} failed to load config '{}': {e}", "error:".red().bold(), path.display());
+                eprintln!(
+                    "{} failed to load config '{}': {e}",
+                    "error:".red().bold(),
+                    path.display()
+                );
                 std::process::exit(1);
             }
         }
@@ -300,7 +303,9 @@ fn run_single_agent(args: Cli, suite: EvalScenarioSuite) {
         && !args.dry_run
         && let Some(ref env_var) = eval_config.agent.auth_env_var
     {
-        let present = std::env::var(env_var).map(|v| !v.is_empty()).unwrap_or(false);
+        let present = std::env::var(env_var)
+            .map(|v| !v.is_empty())
+            .unwrap_or(false);
         if !present {
             eprintln!(
                 "{} Agent profile '{}' requires manual authentication.\n\
@@ -340,8 +345,14 @@ fn run_single_agent(args: Cli, suite: EvalScenarioSuite) {
     // Everything else is printed by print_text() after the run finishes.
     let single_agent_progress: ProgressCallback = Arc::new(|event| {
         if let ProgressEvent::RateLimitRetry {
-            scenario_id, variation_id, attempt, max_attempts, wait_secs, ..
-        } = event {
+            scenario_id,
+            variation_id,
+            attempt,
+            max_attempts,
+            wait_secs,
+            ..
+        } = event
+        {
             eprintln!(
                 "{} {}/{} rate-limited (429) — waiting {}s  [retry {}/{}]",
                 "⏸".yellow(),
@@ -356,7 +367,11 @@ fn run_single_agent(args: Cli, suite: EvalScenarioSuite) {
 
     let opts = CliRunnerOptions {
         eval_config: eval_config.clone(),
-        scenario_ids: args.scenario.as_ref().map(|id| vec![id.clone()]).unwrap_or_default(),
+        scenario_ids: args
+            .scenario
+            .as_ref()
+            .map(|id| vec![id.clone()])
+            .unwrap_or_default(),
         dry_run: args.dry_run,
         bin_override: args.bin_override,
         progress: Some(single_agent_progress),
@@ -367,10 +382,22 @@ fn run_single_agent(args: Cli, suite: EvalScenarioSuite) {
 
     if !args.quiet && !args.json {
         println!("{}", "agent-eval — cross-interface scenario harness".bold());
-        println!("  Agent   : {} [{}]", eval_config.agent.name.cyan(), eval_config.agent.id);
-        println!("  Mode    : {}", format!("{:?}", eval_config.agent.mode).to_lowercase().yellow());
+        println!(
+            "  Agent   : {} [{}]",
+            eval_config.agent.name.cyan(),
+            eval_config.agent.id
+        );
+        println!(
+            "  Mode    : {}",
+            format!("{:?}", eval_config.agent.mode)
+                .to_lowercase()
+                .yellow()
+        );
         println!("  Binary  : {}", bin.display().to_string().cyan());
-        println!("  Model   : {}/{}", eval_config.model.provider, eval_config.model.name);
+        println!(
+            "  Model   : {}/{}",
+            eval_config.model.provider, eval_config.model.name
+        );
         if args.dry_run {
             println!("  Run     : {}", "DRY-RUN (no subprocess calls)".yellow());
         }
@@ -435,7 +462,10 @@ fn run_suite(args: SuiteArgs, suite: EvalScenarioSuite) {
     }
 
     if profiles.is_empty() {
-        eprintln!("{} No profiles matched the given --families / --agents filter.", "error:".red().bold());
+        eprintln!(
+            "{} No profiles matched the given --families / --agents filter.",
+            "error:".red().bold()
+        );
         std::process::exit(1);
     }
 
@@ -444,7 +474,8 @@ fn run_suite(args: SuiteArgs, suite: EvalScenarioSuite) {
         if !suite.scenarios.iter().any(|s| &s.id == id) {
             eprintln!(
                 "{} Unknown scenario '{}'. Run `agent-eval --list` to see valid IDs.",
-                "error:".red().bold(), id
+                "error:".red().bold(),
+                id
             );
             std::process::exit(1);
         }
@@ -454,7 +485,11 @@ fn run_suite(args: SuiteArgs, suite: EvalScenarioSuite) {
     if let Some(ref dir) = args.output_dir
         && let Err(e) = std::fs::create_dir_all(dir)
     {
-        eprintln!("{} Could not create output directory '{}': {e}", "error:".red().bold(), dir.display());
+        eprintln!(
+            "{} Could not create output directory '{}': {e}",
+            "error:".red().bold(),
+            dir.display()
+        );
         std::process::exit(1);
     }
 
@@ -511,7 +546,10 @@ fn run_suite(args: SuiteArgs, suite: EvalScenarioSuite) {
         .run();
 
     if reports.is_empty() {
-        eprintln!("{} No reports produced — all profiles were skipped.", "warning:".yellow());
+        eprintln!(
+            "{} No reports produced — all profiles were skipped.",
+            "warning:".yellow()
+        );
         return;
     }
 
@@ -530,15 +568,16 @@ fn run_suite(args: SuiteArgs, suite: EvalScenarioSuite) {
                 comparison.print_json();
             }
         }
-        OutputFormat::Html => {
-            match &args.output_dir {
-                Some(dir) => save_html_report(&comparison, dir),
-                None => {
-                    eprintln!("{} --format html requires --output-dir", "error:".red().bold());
-                    std::process::exit(1);
-                }
+        OutputFormat::Html => match &args.output_dir {
+            Some(dir) => save_html_report(&comparison, dir),
+            None => {
+                eprintln!(
+                    "{} --format html requires --output-dir",
+                    "error:".red().bold()
+                );
+                std::process::exit(1);
             }
-        }
+        },
         OutputFormat::All => {
             comparison.print_text();
             if let Some(ref dir) = args.output_dir {
@@ -549,7 +588,9 @@ fn run_suite(args: SuiteArgs, suite: EvalScenarioSuite) {
     }
 
     // Exit non-zero if any agent had failures (for CI).
-    let any_failed = comparison.leaderboard.iter()
+    let any_failed = comparison
+        .leaderboard
+        .iter()
         .any(|r| r.passed_variations < r.total_variations);
     if !args.dry_run && any_failed {
         std::process::exit(1);
@@ -564,13 +605,20 @@ fn run_report(args: ReportArgs) {
     for path in &args.from {
         let loaded = load_reports_from_path(path);
         if loaded.is_empty() {
-            eprintln!("{} No valid EvalReport JSON files found in '{}'", "warning:".yellow(), path.display());
+            eprintln!(
+                "{} No valid EvalReport JSON files found in '{}'",
+                "warning:".yellow(),
+                path.display()
+            );
         }
         reports.extend(loaded);
     }
 
     if reports.is_empty() {
-        eprintln!("{} No reports loaded — nothing to compare.", "error:".red().bold());
+        eprintln!(
+            "{} No reports loaded — nothing to compare.",
+            "error:".red().bold()
+        );
         std::process::exit(1);
     }
 
@@ -578,7 +626,11 @@ fn run_report(args: ReportArgs) {
     let mut seen = std::collections::HashSet::new();
     reports.retain(|r| seen.insert(r.run_id.clone()));
 
-    println!("{} Loaded {} agent report(s)", "info:".cyan(), reports.len());
+    println!(
+        "{} Loaded {} agent report(s)",
+        "info:".cyan(),
+        reports.len()
+    );
 
     let comparison = ComparisonEngine::compare(reports);
 
@@ -586,28 +638,31 @@ fn run_report(args: ReportArgs) {
         OutputFormat::Text => {
             comparison.print_text();
         }
-        OutputFormat::Json => {
-            match &args.output_dir {
-                Some(dir) => {
-                    std::fs::create_dir_all(dir).ok();
-                    save_comparison_json(&comparison, dir);
-                    println!("{} Comparison JSON saved to {}", "ok:".green(), dir.display());
-                }
-                None => comparison.print_json(),
+        OutputFormat::Json => match &args.output_dir {
+            Some(dir) => {
+                std::fs::create_dir_all(dir).ok();
+                save_comparison_json(&comparison, dir);
+                println!(
+                    "{} Comparison JSON saved to {}",
+                    "ok:".green(),
+                    dir.display()
+                );
             }
-        }
-        OutputFormat::Html => {
-            match &args.output_dir {
-                Some(dir) => {
-                    std::fs::create_dir_all(dir).ok();
-                    save_html_report(&comparison, dir);
-                }
-                None => {
-                    eprintln!("{} --format html requires --output-dir", "error:".red().bold());
-                    std::process::exit(1);
-                }
+            None => comparison.print_json(),
+        },
+        OutputFormat::Html => match &args.output_dir {
+            Some(dir) => {
+                std::fs::create_dir_all(dir).ok();
+                save_html_report(&comparison, dir);
             }
-        }
+            None => {
+                eprintln!(
+                    "{} --format html requires --output-dir",
+                    "error:".red().bold()
+                );
+                std::process::exit(1);
+            }
+        },
         OutputFormat::All => {
             comparison.print_text();
             if let Some(ref dir) = args.output_dir {
@@ -642,7 +697,10 @@ fn make_terminal_progress(quiet: bool) -> ProgressCallback {
 
 fn handle_progress_event(st: &mut ProgressState, event: ProgressEvent) {
     match event {
-        ProgressEvent::ProfileStarted { agent_id, total_variations } => {
+        ProgressEvent::ProfileStarted {
+            agent_id,
+            total_variations,
+        } => {
             let pb = st.mp.add(ProgressBar::new(total_variations as u64));
             pb.set_style(
                 ProgressStyle::with_template(
@@ -725,17 +783,24 @@ fn handle_progress_event(st: &mut ProgressState, event: ProgressEvent) {
         }
 
         ProgressEvent::ProfileSkipped { agent_id, reason } => {
-            st.mp.println(format!(
-                "  {} {:<26} — {}", "⊘".dimmed(), agent_id.dimmed(), reason.dimmed()
-            )).ok();
+            st.mp
+                .println(format!(
+                    "  {} {:<26} — {}",
+                    "⊘".dimmed(),
+                    agent_id.dimmed(),
+                    reason.dimmed()
+                ))
+                .ok();
         }
 
         ProgressEvent::SuiteFinished { elapsed_secs } => {
-            st.mp.println(format!(
-                "\n  {} Suite finished in {:.1}s",
-                "✓".green().bold(),
-                elapsed_secs
-            )).ok();
+            st.mp
+                .println(format!(
+                    "\n  {} Suite finished in {:.1}s",
+                    "✓".green().bold(),
+                    elapsed_secs
+                ))
+                .ok();
         }
     }
 }
@@ -767,9 +832,7 @@ fn load_reports_from_path(path: &std::path::Path) -> Vec<EvalReport> {
             .into_iter()
             .flatten()
             .flatten()
-            .filter(|e| {
-                e.path().extension().map(|x| x == "json").unwrap_or(false)
-            })
+            .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
             .collect();
         entries.sort_by_key(|e| e.file_name());
 
@@ -789,23 +852,35 @@ fn try_load_report(path: &std::path::Path) -> Option<EvalReport> {
     serde_json::from_str::<EvalReport>(&content).ok()
 }
 
-fn save_comparison_json(comparison: &agent_evaluation::comparison::ComparisonReport, dir: &std::path::Path) {
+fn save_comparison_json(
+    comparison: &agent_evaluation::comparison::ComparisonReport,
+    dir: &std::path::Path,
+) {
     let ts = comparison.timestamp.format("%Y%m%d-%H%M%S").to_string();
     let filename = format!("comparison-{ts}.json");
     let path = dir.join(&filename);
     match serde_json::to_string_pretty(comparison) {
         Ok(json) => {
             if let Err(e) = std::fs::write(&path, &json) {
-                eprintln!("{} Could not write comparison JSON: {e}", "error:".red().bold());
+                eprintln!(
+                    "{} Could not write comparison JSON: {e}",
+                    "error:".red().bold()
+                );
             } else {
                 println!("{} Comparison JSON → {}", "saved:".green(), path.display());
             }
         }
-        Err(e) => eprintln!("{} Could not serialise comparison: {e}", "error:".red().bold()),
+        Err(e) => eprintln!(
+            "{} Could not serialise comparison: {e}",
+            "error:".red().bold()
+        ),
     }
 }
 
-fn save_html_report(comparison: &agent_evaluation::comparison::ComparisonReport, dir: &std::path::Path) {
+fn save_html_report(
+    comparison: &agent_evaluation::comparison::ComparisonReport,
+    dir: &std::path::Path,
+) {
     let ts = comparison.timestamp.format("%Y%m%d-%H%M%S").to_string();
     let filename = format!("report-{ts}.html");
     let path = dir.join(&filename);

@@ -23,8 +23,9 @@ impl EvalScenarioSuite {
     /// # Panics
     /// Panics if the embedded JSON is malformed (indicates a build-time bug).
     pub fn load_builtin() -> Self {
-        serde_json::from_str(BUILTIN_SCENARIOS_JSON)
-            .expect("agent-evaluation: embedded scenarios.json is malformed — this is a build-time bug")
+        serde_json::from_str(BUILTIN_SCENARIOS_JSON).expect(
+            "agent-evaluation: embedded scenarios.json is malformed — this is a build-time bug",
+        )
     }
 
     /// Return only the scenarios whose IDs appear in `ids`. If `ids` is empty, returns all.
@@ -68,7 +69,9 @@ pub struct Rubric {
     pub max_iterations: usize,
 }
 
-fn default_max_iterations() -> usize { 1 }
+fn default_max_iterations() -> usize {
+    1
+}
 
 /// A single prompt variation within a scenario.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,4 +108,3 @@ pub struct HistoryMessage {
     /// Message text.
     pub content: String,
 }
-

@@ -207,7 +207,11 @@ fn build_category_matrix(reports: &[EvalReport], leaderboard: &[AgentRank]) -> C
         }
     }
 
-    CategoryMatrix { agents, categories, scores }
+    CategoryMatrix {
+        agents,
+        categories,
+        scores,
+    }
 }
 
 fn build_profile_degradation(reports: &[EvalReport]) -> Vec<FamilyDegradation> {
@@ -251,7 +255,13 @@ fn build_profile_degradation(reports: &[EvalReport]) -> Vec<FamilyDegradation> {
                 _ => None,
             };
             let _ = delta; // discard the incorrect first attempt
-            FamilyDegradation { family, full, iterative, sandboxed, delta_full_sandboxed }
+            FamilyDegradation {
+                family,
+                full,
+                iterative,
+                sandboxed,
+                delta_full_sandboxed,
+            }
         })
         .collect()
 }
@@ -310,7 +320,11 @@ fn build_check_heatmap(reports: &[EvalReport], leaderboard: &[AgentRank]) -> Che
         })
         .collect();
 
-    CheckHeatmap { agents, checks, failure_rates }
+    CheckHeatmap {
+        agents,
+        checks,
+        failure_rates,
+    }
 }
 
 fn build_latency_summary(reports: &[EvalReport], leaderboard: &[AgentRank]) -> Vec<AgentLatency> {
@@ -355,7 +369,10 @@ fn build_variation_matrix(reports: &[EvalReport], leaderboard: &[AgentRank]) -> 
     if let Some(first) = reports.first() {
         for scenario in &first.scenarios {
             for variation in &scenario.variations {
-                slots.push(format!("{}/{}", scenario.scenario_id, variation.variation_id));
+                slots.push(format!(
+                    "{}/{}",
+                    scenario.scenario_id, variation.variation_id
+                ));
             }
         }
     }
@@ -373,7 +390,11 @@ fn build_variation_matrix(reports: &[EvalReport], leaderboard: &[AgentRank]) -> 
         }
     }
 
-    VariationMatrix { agents, slots, data }
+    VariationMatrix {
+        agents,
+        slots,
+        data,
+    }
 }
 
 // ─── Text output ──────────────────────────────────────────────────────────────
@@ -384,11 +405,23 @@ impl ComparisonReport {
         use colored::Colorize;
 
         println!();
-        println!("{}", "╔══════════════════════════════════════════════════════════╗".bold());
-        println!("{}", "║         GESTURA EVAL — COMPARISON REPORT                 ║".bold());
-        println!("{}", "╚══════════════════════════════════════════════════════════╝".bold());
+        println!(
+            "{}",
+            "╔══════════════════════════════════════════════════════════╗".bold()
+        );
+        println!(
+            "{}",
+            "║         GESTURA EVAL — COMPARISON REPORT                 ║".bold()
+        );
+        println!(
+            "{}",
+            "╚══════════════════════════════════════════════════════════╝".bold()
+        );
         println!("  Run ID  : {}", self.run_id);
-        println!("  Time    : {}", self.timestamp.format("%Y-%m-%d %H:%M:%S UTC"));
+        println!(
+            "  Time    : {}",
+            self.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
+        );
         println!("  Agents  : {}", self.leaderboard.len());
         println!();
 
@@ -441,7 +474,12 @@ impl ComparisonReport {
             return;
         }
 
-        println!("{}", "  CATEGORY MATRIX  (mean score per category)".bold().underline());
+        println!(
+            "{}",
+            "  CATEGORY MATRIX  (mean score per category)"
+                .bold()
+                .underline()
+        );
         println!();
 
         // Column widths
@@ -465,7 +503,8 @@ impl ComparisonReport {
         for agent_id in &matrix.agents {
             print!("  {:<width$}", agent_id, width = agent_col);
             for cat in &matrix.categories {
-                let score = matrix.scores
+                let score = matrix
+                    .scores
                     .get(agent_id)
                     .and_then(|m| m.get(cat))
                     .copied();
@@ -488,7 +527,8 @@ impl ComparisonReport {
             }
 
             // Mean across all categories for this agent
-            let scores: Vec<f32> = matrix.categories
+            let scores: Vec<f32> = matrix
+                .categories
                 .iter()
                 .filter_map(|c| matrix.scores.get(agent_id).and_then(|m| m.get(c)))
                 .copied()
@@ -517,7 +557,12 @@ impl ComparisonReport {
             return;
         }
 
-        println!("{}", "  PROFILE DEGRADATION  (full → sandboxed quality loss)".bold().underline());
+        println!(
+            "{}",
+            "  PROFILE DEGRADATION  (full → sandboxed quality loss)"
+                .bold()
+                .underline()
+        );
         println!();
         println!(
             "  {:<18} {:>9} {:>10} {:>10} {:>12}",
@@ -530,9 +575,13 @@ impl ComparisonReport {
                 Some(v) => {
                     let pct = v * 100.0;
                     let t = format!("{:.1}%", pct);
-                    if pct >= 85.0 { t.green().to_string() }
-                    else if pct >= 60.0 { t.yellow().to_string() }
-                    else { t.red().to_string() }
+                    if pct >= 85.0 {
+                        t.green().to_string()
+                    } else if pct >= 60.0 {
+                        t.yellow().to_string()
+                    } else {
+                        t.red().to_string()
+                    }
                 }
                 None => "   -   ".dimmed().to_string(),
             };
@@ -541,7 +590,11 @@ impl ComparisonReport {
                 Some(v) => {
                     let pct = v * 100.0;
                     let t = format!("{:+.1}%", pct);
-                    if pct >= 0.0 { t.green().to_string() } else { t.red().to_string() }
+                    if pct >= 0.0 {
+                        t.green().to_string()
+                    } else {
+                        t.red().to_string()
+                    }
                 }
                 None => "   -   ".dimmed().to_string(),
             };
@@ -565,7 +618,12 @@ impl ComparisonReport {
             return;
         }
 
-        println!("{}", "  LATENCY  (subprocess wall-clock time per variation)".bold().underline());
+        println!(
+            "{}",
+            "  LATENCY  (subprocess wall-clock time per variation)"
+                .bold()
+                .underline()
+        );
         println!();
         println!(
             "  {:<30} {:>8} {:>8} {:>8} {:>8}",
@@ -576,11 +634,7 @@ impl ComparisonReport {
         for lat in &self.latency_summary {
             println!(
                 "  {:<30} {:>8} {:>8} {:>8} {:>8}",
-                lat.agent_id,
-                lat.p50_ms,
-                lat.p95_ms,
-                lat.max_ms,
-                lat.mean_ms,
+                lat.agent_id, lat.p50_ms, lat.p95_ms, lat.max_ms, lat.mean_ms,
             );
         }
         println!();
@@ -634,14 +688,14 @@ impl<'a> From<&'a ComparisonReport> for ComparisonReportSlim<'a> {
 /// Shorten a category name to ≤ 7 chars for table headers.
 fn abbreviate_category(cat: &str) -> &str {
     match cat {
-        "simple_query"       => "smpl_q",
-        "multi_turn"         => "multi",
-        "planning"           => "plan",
-        "error_handling"     => "err_h",
+        "simple_query" => "smpl_q",
+        "multi_turn" => "multi",
+        "planning" => "plan",
+        "error_handling" => "err_h",
         "tool_extensibility" => "tools",
-        "privacy"            => "priv",
-        "context_retention"  => "ctx",
-        "long_context"       => "long",
-        other                => other,
+        "privacy" => "priv",
+        "context_retention" => "ctx",
+        "long_context" => "long",
+        other => other,
     }
 }

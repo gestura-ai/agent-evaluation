@@ -57,8 +57,8 @@ pub use comparison::{
     FamilyDegradation, VariationMatrix,
 };
 pub use config::{
-    AgentMeta, AgentMode, EvalConfig, ExecutionConfig, ModelConfig, PermissionConfig,
-    ScenarioOverride, SubprocessDef, Thresholds, VariationOverride, BUILTIN_AGENT_IDS,
+    AgentMeta, AgentMode, BUILTIN_AGENT_IDS, EvalConfig, ExecutionConfig, ModelConfig,
+    PermissionConfig, ScenarioOverride, SubprocessDef, Thresholds, VariationOverride,
 };
 pub use evaluator::{CheckResult, EvaluationResult, RuleEvaluator};
 pub use judge::{JudgeScore, LlmJudge};

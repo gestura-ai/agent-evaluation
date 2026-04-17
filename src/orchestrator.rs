@@ -10,16 +10,13 @@
 //! sequentially inside [`CliEvalRunner`].  A `--parallel-profiles N` flag can be
 //! layered on top later without touching this interface.
 
-use std::{
-    path::PathBuf,
-    time::Instant,
-};
+use std::{path::PathBuf, time::Instant};
 
 use tracing::warn;
 
 use crate::{
     CliEvalRunner, CliRunnerOptions,
-    config::{EvalConfig, ConfigError, BUILTIN_AGENT_IDS},
+    config::{BUILTIN_AGENT_IDS, ConfigError, EvalConfig},
     progress::{ProgressCallback, ProgressEvent},
     report::EvalReport,
     scenario::EvalScenarioSuite,
@@ -89,7 +86,10 @@ pub struct MultiRunOrchestrator {
 
 impl MultiRunOrchestrator {
     pub fn new(plan: SuiteRunPlan) -> Self {
-        Self { plan, progress: None }
+        Self {
+            plan,
+            progress: None,
+        }
     }
 
     /// Attach a progress callback.  All runner events for every profile funnel
@@ -164,7 +164,9 @@ impl MultiRunOrchestrator {
 
         let elapsed = wall.elapsed().as_secs_f64();
         if let Some(ref cb) = self.progress {
-            cb(ProgressEvent::SuiteFinished { elapsed_secs: elapsed });
+            cb(ProgressEvent::SuiteFinished {
+                elapsed_secs: elapsed,
+            });
         }
 
         reports

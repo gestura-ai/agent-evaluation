@@ -53,15 +53,10 @@ pub enum ProgressEvent {
     },
 
     /// A profile was skipped (e.g. missing manual-auth token).
-    ProfileSkipped {
-        agent_id: String,
-        reason: String,
-    },
+    ProfileSkipped { agent_id: String, reason: String },
 
     /// The entire suite has finished all profiles.
-    SuiteFinished {
-        elapsed_secs: f64,
-    },
+    SuiteFinished { elapsed_secs: f64 },
 }
 
 /// A shared, cheaply-cloneable progress callback.

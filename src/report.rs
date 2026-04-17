@@ -125,12 +125,19 @@ impl EvalReport {
     pub fn finalize(&mut self) {
         let total_s = self.scenarios.len();
         let passed_s = self.scenarios.iter().filter(|s| s.passed).count();
-        let all_vars: Vec<&VariationResult> =
-            self.scenarios.iter().flat_map(|s| s.variations.iter()).collect();
+        let all_vars: Vec<&VariationResult> = self
+            .scenarios
+            .iter()
+            .flat_map(|s| s.variations.iter())
+            .collect();
         let total_v = all_vars.len();
         let passed_v = all_vars.iter().filter(|v| v.passed).count();
         let score_sum: f32 = all_vars.iter().map(|v| v.score).sum();
-        let overall = if total_v > 0 { score_sum / total_v as f32 } else { 1.0 };
+        let overall = if total_v > 0 {
+            score_sum / total_v as f32
+        } else {
+            1.0
+        };
 
         self.summary = EvalSummary {
             total_scenarios: total_s,
@@ -159,7 +166,10 @@ impl EvalReport {
         println!("║          GESTURA EVAL REPORT                             ║");
         println!("╚══════════════════════════════════════════════════════════╝");
         println!("  Run ID  : {}", self.run_id);
-        println!("  Time    : {}", self.timestamp.format("%Y-%m-%d %H:%M:%S UTC"));
+        println!(
+            "  Time    : {}",
+            self.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
+        );
         println!("  Agent   : {} [{}]", self.agent_name, self.agent_id);
         println!("  Mode    : {}", self.agent_mode);
         println!("  Provider: {} / {}", self.provider, self.model);
@@ -192,16 +202,29 @@ impl EvalReport {
                 let vicon = if v.passed { "  ✓" } else { "  ✗" };
                 let trial_note = if v.trial_scores.len() > 1 {
                     let min = v.trial_scores.iter().cloned().fold(f32::INFINITY, f32::min);
-                    let max = v.trial_scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                    let max = v
+                        .trial_scores
+                        .iter()
+                        .cloned()
+                        .fold(f32::NEG_INFINITY, f32::max);
                     let passed_n = v.trial_scores.iter().filter(|&&s| s >= 0.5).count();
                     format!(
                         " ({}/{} trials, range {:.0}–{:.0}%)",
-                        passed_n, v.trial_scores.len(), min * 100.0, max * 100.0
+                        passed_n,
+                        v.trial_scores.len(),
+                        min * 100.0,
+                        max * 100.0
                     )
                 } else {
                     String::new()
                 };
-                println!("      {} {} — {:.0}%{}", vicon, v.variation_id, v.score * 100.0, trial_note);
+                println!(
+                    "      {} {} — {:.0}%{}",
+                    vicon,
+                    v.variation_id,
+                    v.score * 100.0,
+                    trial_note
+                );
                 println!("        Prompt : {}", v.prompt_preview);
 
                 // ── Pipeline / subprocess error ─────────────────────────────
@@ -228,12 +251,7 @@ impl EvalReport {
                         } else {
                             "✗"
                         };
-                        println!(
-                            "        {} {:<35} {}",
-                            cicon,
-                            check.name,
-                            check.details
-                        );
+                        println!("        {} {:<35} {}", cicon, check.name, check.details);
                     }
                 }
 
@@ -286,7 +304,8 @@ fn truncate_response(text: &str, max_chars: usize) -> String {
         text.to_string()
     } else {
         let truncated: String = text.chars().take(max_chars - 1).collect();
-        format!("{truncated}…\n<response truncated at {max_chars} chars; use --verbose or --json for full output>")
+        format!(
+            "{truncated}…\n<response truncated at {max_chars} chars; use --verbose or --json for full output>"
+        )
     }
 }
-

@@ -4,8 +4,8 @@
 //! The canonical defaults are in `agents/baseline.toml` — not in Rust code —
 //! so the baseline is human-readable and version-controlled alongside the profiles.
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // ─── Agent identity ───────────────────────────────────────────────────────────
 
@@ -184,8 +184,12 @@ pub struct ExecutionConfig {
     pub trials: u32,
 }
 
-fn default_rate_limit_backoff_secs() -> u64 { 15 }
-fn default_trials() -> u32 { 1 }
+fn default_rate_limit_backoff_secs() -> u64 {
+    15
+}
+fn default_trials() -> u32 {
+    1
+}
 
 impl Default for ExecutionConfig {
     fn default() -> Self {
@@ -251,7 +255,11 @@ pub struct Thresholds {
 
 impl Default for Thresholds {
     fn default() -> Self {
-        Self { min_variation_score: 0.8, min_scenario_pass_rate: 1.0, min_overall_score: 0.8 }
+        Self {
+            min_variation_score: 0.8,
+            min_scenario_pass_rate: 1.0,
+            min_overall_score: 0.8,
+        }
     }
 }
 
@@ -284,4 +292,3 @@ pub struct VariationOverride {
     #[serde(default)]
     pub disabled_checks: Vec<String>,
 }
-

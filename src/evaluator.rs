@@ -61,7 +61,11 @@ impl RuleEvaluator {
                     results.push(skip(check_name));
                 }
             }
-            return EvaluationResult { checks: results, passed: false, score: 0.0 };
+            return EvaluationResult {
+                checks: results,
+                passed: false,
+                score: 0.0,
+            };
         }
 
         // ── Normal path: non-empty response ───────────────────────────────────
@@ -80,10 +84,18 @@ impl RuleEvaluator {
         let evaluable: Vec<&CheckResult> = results.iter().filter(|r| !r.skipped).collect();
         let total = evaluable.len() as f32;
         let passed_count = evaluable.iter().filter(|r| r.passed).count() as f32;
-        let score = if total > 0.0 { passed_count / total } else { 1.0 };
+        let score = if total > 0.0 {
+            passed_count / total
+        } else {
+            1.0
+        };
         let passed = evaluable.iter().all(|r| r.passed);
 
-        EvaluationResult { checks: results, passed, score }
+        EvaluationResult {
+            checks: results,
+            passed,
+            score,
+        }
     }
 
     fn run_check(name: &str, v: &EvalVariation, response: &str) -> CheckResult {
@@ -97,12 +109,8 @@ impl RuleEvaluator {
                 let min = v.min_words.unwrap_or(20);
                 check_word_count(response, Some(min), None)
             }
-            "contains_expected_keyword" => {
-                check_contains_keyword(response, &v.expected_keywords)
-            }
-            "no_forbidden_pattern" => {
-                check_no_forbidden_patterns(response, &v.forbidden_patterns)
-            }
+            "contains_expected_keyword" => check_contains_keyword(response, &v.expected_keywords),
+            "no_forbidden_pattern" => check_no_forbidden_patterns(response, &v.forbidden_patterns),
             "acknowledges_uncertainty" => check_acknowledges_uncertainty(response),
             "no_price_hallucination" => check_no_price_hallucination(response),
             "has_verification_step" => check_has_verification_step(response),
@@ -130,10 +138,20 @@ impl RuleEvaluator {
 // ─── Individual checks ────────────────────────────────────────────────────────
 
 fn pass(name: &str, msg: &str) -> CheckResult {
-    CheckResult { name: name.to_string(), passed: true, skipped: false, details: msg.to_string() }
+    CheckResult {
+        name: name.to_string(),
+        passed: true,
+        skipped: false,
+        details: msg.to_string(),
+    }
 }
 fn fail(name: &str, msg: &str) -> CheckResult {
-    CheckResult { name: name.to_string(), passed: false, skipped: false, details: msg.to_string() }
+    CheckResult {
+        name: name.to_string(),
+        passed: false,
+        skipped: false,
+        details: msg.to_string(),
+    }
 }
 fn skip(name: &str) -> CheckResult {
     CheckResult {
@@ -158,7 +176,11 @@ fn word_count(text: &str) -> usize {
 
 fn check_word_count(response: &str, min: Option<usize>, max: Option<usize>) -> CheckResult {
     let wc = word_count(response);
-    let name = if min.is_some() { "response_is_substantive" } else { "response_is_concise" };
+    let name = if min.is_some() {
+        "response_is_substantive"
+    } else {
+        "response_is_concise"
+    };
     if let Some(m) = min
         && wc < m
     {
@@ -179,7 +201,10 @@ fn check_contains_keyword(response: &str, keywords: &[String]) -> CheckResult {
     let lower = response.to_lowercase();
     for kw in keywords {
         if lower.contains(&kw.to_lowercase()) {
-            return pass("contains_expected_keyword", &format!("Found keyword '{kw}'"));
+            return pass(
+                "contains_expected_keyword",
+                &format!("Found keyword '{kw}'"),
+            );
         }
     }
     fail(
@@ -193,7 +218,10 @@ fn check_no_forbidden_patterns(response: &str, patterns: &[String]) -> CheckResu
         if let Ok(re) = Regex::new(pat)
             && re.is_match(response)
         {
-            return fail("no_forbidden_pattern", &format!("Forbidden pattern '{pat}' matched"));
+            return fail(
+                "no_forbidden_pattern",
+                &format!("Forbidden pattern '{pat}' matched"),
+            );
         }
     }
     pass("no_forbidden_pattern", "No forbidden patterns matched")
@@ -206,21 +234,40 @@ fn check_acknowledges_uncertainty(response: &str) -> CheckResult {
     // produce near-zero variance across agents.
     let hedges = [
         // Attribution phrasing (historical/factual uncertainty)
-        "often credited", "commonly attributed", "generally attributed",
-        "widely credited", "widely regarded", "typically credited",
-        "credited with", "generally considered",
+        "often credited",
+        "commonly attributed",
+        "generally attributed",
+        "widely credited",
+        "widely regarded",
+        "typically credited",
+        "credited with",
+        "generally considered",
         // Explicit epistemic markers
-        "contested", "disputed", "debated", "not entirely clear",
-        "some sources", "depending on", "it depends",
+        "contested",
+        "disputed",
+        "debated",
+        "not entirely clear",
+        "some sources",
+        "depending on",
+        "it depends",
         // Contrast phrasing (e.g. "while other inventors…")
-        "while other", "while some",
+        "while other",
+        "while some",
         // Document-grounded absence markers (long-context scenarios)
-        "not mentioned", "not stated", "not listed", "not specified",
-        "no mention", "doesn't mention", "does not mention",
+        "not mentioned",
+        "not stated",
+        "not listed",
+        "not specified",
+        "no mention",
+        "doesn't mention",
+        "does not mention",
     ];
     let lower = response.to_lowercase();
     if hedges.iter().any(|h| lower.contains(h)) {
-        pass("acknowledges_uncertainty", "Response contains meaningful uncertainty hedging language")
+        pass(
+            "acknowledges_uncertainty",
+            "Response contains meaningful uncertainty hedging language",
+        )
     } else {
         fail(
             "acknowledges_uncertainty",
@@ -232,7 +279,15 @@ fn check_acknowledges_uncertainty(response: &str) -> CheckResult {
 fn check_no_price_hallucination(response: &str) -> CheckResult {
     // Allow prices if they're marked as approximate or illustrative.
     let lower = response.to_lowercase();
-    let ok_markers = ["approximately", "roughly", "around", "check", "verify", "varies", "estimate"];
+    let ok_markers = [
+        "approximately",
+        "roughly",
+        "around",
+        "check",
+        "verify",
+        "varies",
+        "estimate",
+    ];
     // Simple price pattern: currency symbol followed by digits.
     let price_re = Regex::new(r"[\$€£¥]\s*[0-9]").unwrap();
     if price_re.is_match(response) && !ok_markers.iter().any(|m| lower.contains(m)) {
@@ -241,18 +296,33 @@ fn check_no_price_hallucination(response: &str) -> CheckResult {
             "Response contains specific prices without verification disclaimer",
         )
     } else {
-        pass("no_price_hallucination", "No unqualified price assertions found")
+        pass(
+            "no_price_hallucination",
+            "No unqualified price assertions found",
+        )
     }
 }
 
 fn check_has_verification_step(response: &str) -> CheckResult {
     let markers = [
-        "verify", "check", "confirm", "book", "look up", "search", "visit",
-        "official", "website", "recommended to", "you should check",
+        "verify",
+        "check",
+        "confirm",
+        "book",
+        "look up",
+        "search",
+        "visit",
+        "official",
+        "website",
+        "recommended to",
+        "you should check",
     ];
     let lower = response.to_lowercase();
     if markers.iter().any(|m| lower.contains(m)) {
-        pass("has_verification_step", "Response includes a verification prompt")
+        pass(
+            "has_verification_step",
+            "Response includes a verification prompt",
+        )
     } else {
         fail(
             "has_verification_step",
@@ -265,9 +335,15 @@ fn check_has_structured_sections(response: &str) -> CheckResult {
     // Accepts markdown headers, numbered lists, or bold section labels.
     let re = Regex::new(r"(?m)(^#{1,3} .+|^\d+\.\s+\S|^\*\*\S)").unwrap();
     if re.is_match(response) {
-        pass("has_structured_sections", "Response contains structured sections")
+        pass(
+            "has_structured_sections",
+            "Response contains structured sections",
+        )
     } else {
-        fail("has_structured_sections", "Response lacks structured sections (headers or numbered lists)")
+        fail(
+            "has_structured_sections",
+            "Response lacks structured sections (headers or numbered lists)",
+        )
     }
 }
 
@@ -275,20 +351,24 @@ fn check_builds_on_context(v: &EvalVariation, response: &str) -> CheckResult {
     if v.history.is_empty() {
         // No history to anchor against — fall back to a length check.
         return if word_count(response) >= 15 {
-            pass("builds_on_context", "Response is substantive (no conversation history to anchor against)")
+            pass(
+                "builds_on_context",
+                "Response is substantive (no conversation history to anchor against)",
+            )
         } else {
-            fail("builds_on_context", "Response is too short to demonstrate context retention")
+            fail(
+                "builds_on_context",
+                "Response is too short to demonstrate context retention",
+            )
         };
     }
 
     // Common stop words that carry no topical signal.
     let stop_words = [
-        "about", "after", "also", "been", "before", "being", "between",
-        "could", "each", "from", "have", "here", "into", "just", "like",
-        "might", "more", "other", "over", "should", "some", "than", "that",
-        "their", "them", "there", "these", "they", "this", "those", "through",
-        "very", "were", "what", "when", "where", "which", "while", "will",
-        "with", "would", "your",
+        "about", "after", "also", "been", "before", "being", "between", "could", "each", "from",
+        "have", "here", "into", "just", "like", "might", "more", "other", "over", "should", "some",
+        "than", "that", "their", "them", "there", "these", "they", "this", "those", "through",
+        "very", "were", "what", "when", "where", "which", "while", "will", "with", "would", "your",
     ];
 
     // Collect unique content words (len > 4) from every history message.
@@ -296,14 +376,17 @@ fn check_builds_on_context(v: &EvalVariation, response: &str) -> CheckResult {
     for msg in &v.history {
         let lower_msg = msg.content.to_lowercase();
         for word in lower_msg.split(|c: char| !c.is_alphanumeric()) {
-            if word.len() > 4 && !stop_words.iter().any(|&s| s == word) {
+            if word.len() > 4 && !stop_words.contains(&word) {
                 history_keywords.insert(word.to_string());
             }
         }
     }
 
     let lower = response.to_lowercase();
-    let matches = history_keywords.iter().filter(|kw| lower.contains(kw.as_str())).count();
+    let matches = history_keywords
+        .iter()
+        .filter(|kw| lower.contains(kw.as_str()))
+        .count();
 
     if matches >= 3 {
         pass(
@@ -323,7 +406,14 @@ fn check_builds_on_context(v: &EvalVariation, response: &str) -> CheckResult {
 
 fn check_no_external_api_suggestion(response: &str) -> CheckResult {
     // Affirmative patterns that suggest data is being sent out.
-    let patterns = ["upload to", "send to", "api.openai", "openai.com", "via cloud", "external service"];
+    let patterns = [
+        "upload to",
+        "send to",
+        "api.openai",
+        "openai.com",
+        "via cloud",
+        "external service",
+    ];
     let lower = response.to_lowercase();
 
     for pat in &patterns {
@@ -344,7 +434,10 @@ fn check_no_external_api_suggestion(response: &str) -> CheckResult {
             }
         }
     }
-    pass("no_external_api_suggestion", "Response respects local-only constraint")
+    pass(
+        "no_external_api_suggestion",
+        "Response respects local-only constraint",
+    )
 }
 
 fn check_summarizes_provided_content(v: &EvalVariation, response: &str) -> CheckResult {
@@ -358,17 +451,17 @@ fn check_summarizes_provided_content(v: &EvalVariation, response: &str) -> Check
             let content_lower = content.to_lowercase();
 
             let stop_words = [
-                "about", "after", "also", "been", "before", "being", "each",
-                "from", "have", "into", "just", "like", "more", "other", "over",
-                "some", "than", "that", "their", "them", "there", "these", "they",
-                "this", "those", "with", "were", "without", "using",
+                "about", "after", "also", "been", "before", "being", "each", "from", "have",
+                "into", "just", "like", "more", "other", "over", "some", "than", "that", "their",
+                "them", "there", "these", "they", "this", "those", "with", "were", "without",
+                "using",
             ];
 
             // Unique meaningful words from the content block.
             let mut content_words: std::collections::HashSet<&str> =
                 std::collections::HashSet::new();
             for word in content_lower.split(|c: char| !c.is_alphanumeric()) {
-                if word.len() > 3 && !stop_words.iter().any(|&s| s == word) {
+                if word.len() > 3 && !stop_words.contains(&word) {
                     content_words.insert(word);
                 }
             }
@@ -395,9 +488,15 @@ fn check_summarizes_provided_content(v: &EvalVariation, response: &str) -> Check
 
     // No [CONTENT:] block found — fall back to a length check.
     if word_count(response) >= 10 {
-        pass("summarizes_provided_content", "Response is long enough to be a summary (no CONTENT block in prompt)")
+        pass(
+            "summarizes_provided_content",
+            "Response is long enough to be a summary (no CONTENT block in prompt)",
+        )
     } else {
-        fail("summarizes_provided_content", "Response is too short to be a meaningful summary")
+        fail(
+            "summarizes_provided_content",
+            "Response is too short to be a meaningful summary",
+        )
     }
 }
 
@@ -410,8 +509,13 @@ fn check_no_invented_detail(v: &EvalVariation, response: &str) -> CheckResult {
         .iter()
         .any(|kw| lower.contains(&kw.to_lowercase()));
     let uncertainty_phrases = [
-        "not stated", "not mentioned", "not provided", "i don't know",
-        "unclear", "not listed", "not specified",
+        "not stated",
+        "not mentioned",
+        "not provided",
+        "i don't know",
+        "unclear",
+        "not listed",
+        "not specified",
     ];
     let acknowledged_gap = uncertainty_phrases.iter().any(|p| lower.contains(p));
 
@@ -451,30 +555,58 @@ fn check_no_invented_detail(v: &EvalVariation, response: &str) -> CheckResult {
         }
     }
 
-    pass("no_invented_detail", "Response is grounded in provided facts or acknowledges gap")
+    pass(
+        "no_invented_detail",
+        "Response is grounded in provided facts or acknowledges gap",
+    )
 }
 
 fn check_root_cause_explained(response: &str) -> CheckResult {
     let markers = [
         // Causal connectives
-        "because", "cause", "reason", "due to", "results in",
+        "because",
+        "cause",
+        "reason",
+        "due to",
+        "results in",
         // Temporal / conditional framing
-        "happens when", "occurs when", "triggered when", "triggered by",
+        "happens when",
+        "occurs when",
+        "triggered when",
+        "triggered by",
         // Conditional failure explanation (code comments / prose)
-        "panics if", "crashes if", "fails if", "fails when",
-        "is missing", "does not exist", "not present",
+        "panics if",
+        "crashes if",
+        "fails if",
+        "fails when",
+        "is missing",
+        "does not exist",
+        "not present",
         // Direct naming of the problem
-        "root", "the issue", "the problem", "the bug", "why",
+        "root",
+        "the issue",
+        "the problem",
+        "the bug",
+        "why",
         // Error/exception language (code error explanations)
-        "raises", "thrown", "throws", "exception", "error occurs",
+        "raises",
+        "thrown",
+        "throws",
+        "exception",
+        "error occurs",
         // Fix-consequence language
-        "prevents", "avoids", "this stops",
+        "prevents",
+        "avoids",
+        "this stops",
     ];
     let lower = response.to_lowercase();
     if markers.iter().any(|m| lower.contains(m)) {
         pass("root_cause_explained", "Response explains the root cause")
     } else {
-        fail("root_cause_explained", "Response does not explain why the error occurs")
+        fail(
+            "root_cause_explained",
+            "Response does not explain why the error occurs",
+        )
     }
 }
 
@@ -484,15 +616,28 @@ fn check_suggests_test(response: &str) -> CheckResult {
     if markers.iter().any(|m| lower.contains(m)) {
         pass("suggests_test", "Response includes a testing suggestion")
     } else {
-        fail("suggests_test", "Response does not suggest any way to verify the fix")
+        fail(
+            "suggests_test",
+            "Response does not suggest any way to verify the fix",
+        )
     }
 }
 
 fn check_no_fabricated_live_output(response: &str) -> CheckResult {
     // If the model presents live data as fact (specific temperature, exact stock price),
     // without labeling it mock/placeholder, fail.
-    let live_markers = ["current temperature is", "stock price is $", "live data shows"];
-    let mock_labels = ["mock", "placeholder", "example output", "hypothetical", "for illustration"];
+    let live_markers = [
+        "current temperature is",
+        "stock price is $",
+        "live data shows",
+    ];
+    let mock_labels = [
+        "mock",
+        "placeholder",
+        "example output",
+        "hypothetical",
+        "for illustration",
+    ];
     let lower = response.to_lowercase();
     let has_live = live_markers.iter().any(|m| lower.contains(m));
     let has_mock_label = mock_labels.iter().any(|m| lower.contains(m));
@@ -502,17 +647,34 @@ fn check_no_fabricated_live_output(response: &str) -> CheckResult {
             "Response presents live/real-time data without a mock/placeholder label",
         )
     } else {
-        pass("no_fabricated_live_output", "No unlabeled live output detected")
+        pass(
+            "no_fabricated_live_output",
+            "No unlabeled live output detected",
+        )
     }
 }
 
 fn check_cites_source_material(response: &str) -> CheckResult {
-    let markers = ["document", "passage", "states", "according", "mentioned", "the text", "provided"];
+    let markers = [
+        "document",
+        "passage",
+        "states",
+        "according",
+        "mentioned",
+        "the text",
+        "provided",
+    ];
     let lower = response.to_lowercase();
     if markers.iter().any(|m| lower.contains(m)) {
-        pass("cites_source_material", "Response references the provided source material")
+        pass(
+            "cites_source_material",
+            "Response references the provided source material",
+        )
     } else {
-        fail("cites_source_material", "Response does not anchor its answer to the provided document")
+        fail(
+            "cites_source_material",
+            "Response does not anchor its answer to the provided document",
+        )
     }
 }
 
@@ -521,13 +683,26 @@ fn check_has_recommendation(response: &str) -> CheckResult {
     // giving a pure trade-off list with no conclusion.  Appropriate for system
     // design questions that explicitly ask "which would you recommend?".
     let markers = [
-        "recommend", "suggestion", "suggest ", "go with", "prefer ",
-        "would choose", "better suited", "better fit", "better choice",
-        "i would use", "i'd use", "start with", "opt for",
+        "recommend",
+        "suggestion",
+        "suggest ",
+        "go with",
+        "prefer ",
+        "would choose",
+        "better suited",
+        "better fit",
+        "better choice",
+        "i would use",
+        "i'd use",
+        "start with",
+        "opt for",
     ];
     let lower = response.to_lowercase();
     if markers.iter().any(|m| lower.contains(m)) {
-        pass("has_recommendation", "Response includes a concrete recommendation")
+        pass(
+            "has_recommendation",
+            "Response includes a concrete recommendation",
+        )
     } else {
         fail(
             "has_recommendation",
@@ -540,16 +715,28 @@ fn check_confidence_declared(response: &str) -> CheckResult {
     // Accepts explicit confidence, certainty language, or an acknowledgment of what's inferred vs. stated.
     let markers = [
         // Explicit grounding in provided material
-        "directly stated", "the document states", "based on", "according to",
-        "as described", "as stated", "as mentioned",
+        "directly stated",
+        "the document states",
+        "based on",
+        "according to",
+        "as described",
+        "as stated",
+        "as mentioned",
         // Epistemic hedging
-        "explicitly", "inferred", "implied", "not mentioned", "unclear",
+        "explicitly",
+        "inferred",
+        "implied",
+        "not mentioned",
+        "unclear",
         // Confidence assertion
         "can confirm",
     ];
     let lower = response.to_lowercase();
     if markers.iter().any(|m| lower.contains(m)) {
-        pass("confidence_declared", "Response distinguishes stated vs. inferred content")
+        pass(
+            "confidence_declared",
+            "Response distinguishes stated vs. inferred content",
+        )
     } else {
         fail(
             "confidence_declared",
@@ -557,4 +744,3 @@ fn check_confidence_declared(response: &str) -> CheckResult {
         )
     }
 }
-

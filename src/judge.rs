@@ -52,12 +52,15 @@ impl JudgeScore {
 #[derive(Clone)]
 pub struct LlmJudge {
     api_key: String,
-    model:   String,
+    model: String,
 }
 
 impl LlmJudge {
     pub fn new(api_key: impl Into<String>) -> Self {
-        Self { api_key: api_key.into(), model: DEFAULT_JUDGE_MODEL.to_string() }
+        Self {
+            api_key: api_key.into(),
+            model: DEFAULT_JUDGE_MODEL.to_string(),
+        }
     }
 
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
@@ -131,7 +134,11 @@ fn build_judge_prompt(variation: &EvalVariation, response: &str) -> String {
     if !variation.history.is_empty() {
         buf.push_str("## Conversation History\n");
         for msg in &variation.history {
-            let role = if msg.role == "user" { "User" } else { "Assistant" };
+            let role = if msg.role == "user" {
+                "User"
+            } else {
+                "Assistant"
+            };
             buf.push_str(&format!("**{role}:** {}\n\n", msg.content));
         }
         buf.push('\n');
@@ -162,21 +169,19 @@ fn build_judge_prompt(variation: &EvalVariation, response: &str) -> String {
 fn parse_judge_response(text: &str, model: &str) -> Option<JudgeScore> {
     // Tolerate occasional markdown fences from the judge.
     let start = text.find('{')?;
-    let end   = text.rfind('}')?;
+    let end = text.rfind('}')?;
     let json_str = &text[start..=end];
 
     let v: serde_json::Value = serde_json::from_str(json_str).ok()?;
 
-    let clamp = |field: &str| -> u8 {
-        v[field].as_u64().unwrap_or(3).clamp(1, 5) as u8
-    };
+    let clamp = |field: &str| -> u8 { v[field].as_u64().unwrap_or(3).clamp(1, 5) as u8 };
 
     Some(JudgeScore {
-        accuracy:    clamp("accuracy"),
+        accuracy: clamp("accuracy"),
         completeness: clamp("completeness"),
-        clarity:     clamp("clarity"),
-        overall:     clamp("overall"),
-        reasoning:   v["reasoning"].as_str().unwrap_or("").to_string(),
-        model:       model.to_string(),
+        clarity: clamp("clarity"),
+        overall: clamp("overall"),
+        reasoning: v["reasoning"].as_str().unwrap_or("").to_string(),
+        model: model.to_string(),
     })
 }

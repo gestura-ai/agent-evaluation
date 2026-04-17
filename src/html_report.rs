@@ -24,14 +24,14 @@ use crate::report::VariationResult;
 
 /// Generate a self-contained HTML report from a [`ComparisonReport`].
 pub fn generate(report: &ComparisonReport) -> String {
-    let data_json          = build_embedded_json(report);
-    let category_table     = build_category_heatmap(report);
-    let check_table        = build_check_heatmap(report);
-    let variation_grid     = build_variation_matrix(report);
-    let chart_init         = build_chart_init(report);
-    let review_panel       = build_review_panel(report);
-    let about_page         = build_about_page(report);
-    let models_cost_panel  = build_models_cost_panel(report);
+    let data_json = build_embedded_json(report);
+    let category_table = build_category_heatmap(report);
+    let check_table = build_check_heatmap(report);
+    let variation_grid = build_variation_matrix(report);
+    let chart_init = build_chart_init(report);
+    let review_panel = build_review_panel(report);
+    let about_page = build_about_page(report);
+    let models_cost_panel = build_models_cost_panel(report);
 
     format!(
         r#"<!DOCTYPE html>
@@ -905,148 +905,188 @@ function escH(s) {{
 </script>
 </body>
 </html>"#,
-        category_table    = category_table,
-        check_table       = check_table,
-        variation_grid    = variation_grid,
-        review_panel      = review_panel,
-        about_page        = about_page,
+        category_table = category_table,
+        check_table = check_table,
+        variation_grid = variation_grid,
+        review_panel = review_panel,
+        about_page = about_page,
         models_cost_panel = models_cost_panel,
-        data_json         = data_json,
-        chart_init        = chart_init,
+        data_json = data_json,
+        chart_init = chart_init,
     )
 }
 
 // ─── Embedded JSON ────────────────────────────────────────────────────────────
 
 fn build_embedded_json(report: &ComparisonReport) -> String {
-    let leaderboard: Vec<serde_json::Value> = report.leaderboard.iter().map(|r| {
-        serde_json::json!({
-            "agent_id": r.agent_id,
-            "overall_score": r.overall_score,
-            "rank": r.rank,
+    let leaderboard: Vec<serde_json::Value> = report
+        .leaderboard
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "agent_id": r.agent_id,
+                "overall_score": r.overall_score,
+                "rank": r.rank,
+            })
         })
-    }).collect();
+        .collect();
 
-    let degradation: Vec<serde_json::Value> = report.profile_degradation.iter().map(|d| {
-        serde_json::json!({
-            "family": d.family,
-            "full": d.full,
-            "iterative": d.iterative,
-            "sandboxed": d.sandboxed,
-            "delta": d.delta_full_sandboxed,
+    let degradation: Vec<serde_json::Value> = report
+        .profile_degradation
+        .iter()
+        .map(|d| {
+            serde_json::json!({
+                "family": d.family,
+                "full": d.full,
+                "iterative": d.iterative,
+                "sandboxed": d.sandboxed,
+                "delta": d.delta_full_sandboxed,
+            })
         })
-    }).collect();
+        .collect();
 
-    let latency: Vec<serde_json::Value> = report.latency_summary.iter().map(|l| {
-        serde_json::json!({
-            "agent_id": l.agent_id,
-            "p50_ms": l.p50_ms,
-            "p95_ms": l.p95_ms,
-            "mean_ms": l.mean_ms,
+    let latency: Vec<serde_json::Value> = report
+        .latency_summary
+        .iter()
+        .map(|l| {
+            serde_json::json!({
+                "agent_id": l.agent_id,
+                "p50_ms": l.p50_ms,
+                "p95_ms": l.p95_ms,
+                "mean_ms": l.mean_ms,
+            })
         })
-    }).collect();
+        .collect();
 
     let categories = &report.category_matrix.categories;
     let agents = &report.category_matrix.agents;
-    let category_data: Vec<serde_json::Value> = agents.iter().map(|agent| {
-        let scores: Vec<f64> = categories.iter().map(|cat| {
-            report.category_matrix.scores
-                .get(agent)
-                .and_then(|m| m.get(cat))
-                .copied()
-                .unwrap_or(0.0) as f64 * 100.0
-        }).collect();
-        serde_json::json!({"agent_id": agent, "scores": scores})
-    }).collect();
+    let category_data: Vec<serde_json::Value> = agents
+        .iter()
+        .map(|agent| {
+            let scores: Vec<f64> = categories
+                .iter()
+                .map(|cat| {
+                    report
+                        .category_matrix
+                        .scores
+                        .get(agent)
+                        .and_then(|m| m.get(cat))
+                        .copied()
+                        .unwrap_or(0.0) as f64
+                        * 100.0
+                })
+                .collect();
+            serde_json::json!({"agent_id": agent, "scores": scores})
+        })
+        .collect();
 
     // Slim per-agent report — only what H2H and Response Review JS need.
     // Omits large redundant fields (provider, dry_run, summary) to keep HTML size down.
-    let reports: Vec<serde_json::Value> = report.agent_reports.iter().map(|r| {
-        let scenarios: Vec<serde_json::Value> = r.scenarios.iter().map(|s| {
-            let variations: Vec<serde_json::Value> = s.variations.iter().map(|v| {
-                let checks: Vec<serde_json::Value> = v.checks.iter().map(|c| {
+    let reports: Vec<serde_json::Value> = report
+        .agent_reports
+        .iter()
+        .map(|r| {
+            let scenarios: Vec<serde_json::Value> = r
+                .scenarios
+                .iter()
+                .map(|s| {
+                    let variations: Vec<serde_json::Value> = s
+                        .variations
+                        .iter()
+                        .map(|v| {
+                            let checks: Vec<serde_json::Value> = v
+                                .checks
+                                .iter()
+                                .map(|c| {
+                                    serde_json::json!({
+                                        "name": c.name,
+                                        "passed": c.passed,
+                                        "skipped": c.skipped,
+                                        "details": c.details,
+                                    })
+                                })
+                                .collect();
+                            let mut vj = serde_json::json!({
+                                "variation_id": v.variation_id,
+                                "prompt_preview": v.prompt_preview,
+                                "response": v.response,
+                                "score": v.score,
+                                "passed": v.passed,
+                                "duration_ms": v.duration_ms,
+                                "checks": checks,
+                            });
+                            if let Some(ref js) = v.judge_score {
+                                vj["judge_score"] = serde_json::json!({
+                                    "accuracy": js.accuracy,
+                                    "completeness": js.completeness,
+                                    "clarity": js.clarity,
+                                    "overall": js.overall,
+                                    "reasoning": js.reasoning,
+                                });
+                            }
+                            vj
+                        })
+                        .collect();
                     serde_json::json!({
-                        "name": c.name,
-                        "passed": c.passed,
-                        "skipped": c.skipped,
-                        "details": c.details,
+                        "scenario_id": s.scenario_id,
+                        "scenario_name": s.scenario_name,
+                        "variations": variations,
                     })
-                }).collect();
-                let mut vj = serde_json::json!({
-                    "variation_id": v.variation_id,
-                    "prompt_preview": v.prompt_preview,
-                    "response": v.response,
-                    "score": v.score,
-                    "passed": v.passed,
-                    "duration_ms": v.duration_ms,
-                    "checks": checks,
-                });
-                if let Some(ref js) = v.judge_score {
-                    vj["judge_score"] = serde_json::json!({
-                        "accuracy": js.accuracy,
-                        "completeness": js.completeness,
-                        "clarity": js.clarity,
-                        "overall": js.overall,
-                        "reasoning": js.reasoning,
-                    });
-                }
-                vj
-            }).collect();
+                })
+                .collect();
             serde_json::json!({
-                "scenario_id": s.scenario_id,
-                "scenario_name": s.scenario_name,
-                "variations": variations,
+                "agent_id": r.agent_id,
+                "model": r.model,
+                "scenarios": scenarios,
             })
-        }).collect();
-        serde_json::json!({
-            "agent_id": r.agent_id,
-            "model": r.model,
-            "scenarios": scenarios,
         })
-    }).collect();
+        .collect();
 
     let judge_model_name = "claude-sonnet-4-6";
 
-    let cost_data: Vec<serde_json::Value> = report.agent_reports.iter().map(|ar| {
-        fn est_tokens(text: &str) -> u64 {
-            ((text.len() as f64) / 4.0).ceil() as u64
-        }
+    let cost_data: Vec<serde_json::Value> = report
+        .agent_reports
+        .iter()
+        .map(|ar| {
+            fn est_tokens(text: &str) -> u64 {
+                ((text.len() as f64) / 4.0).ceil() as u64
+            }
 
-        let mut input_tok = 0u64;
-        let mut output_tok = 0u64;
-        let mut judge_input_tok = 0u64;
-        let mut judge_output_tok = 0u64;
+            let mut input_tok = 0u64;
+            let mut output_tok = 0u64;
+            let mut judge_input_tok = 0u64;
+            let mut judge_output_tok = 0u64;
 
-        for sc in &ar.scenarios {
-            for vr in &sc.variations {
-                let trials = vr.trial_responses.len().max(1);
-                input_tok += est_tokens(&vr.prompt_preview) * trials as u64;
-                if !vr.trial_responses.is_empty() {
-                    for resp in &vr.trial_responses {
-                        output_tok += est_tokens(resp);
+            for sc in &ar.scenarios {
+                for vr in &sc.variations {
+                    let trials = vr.trial_responses.len().max(1);
+                    input_tok += est_tokens(&vr.prompt_preview) * trials as u64;
+                    if !vr.trial_responses.is_empty() {
+                        for resp in &vr.trial_responses {
+                            output_tok += est_tokens(resp);
+                        }
+                    } else {
+                        output_tok += est_tokens(&vr.response);
                     }
-                } else {
-                    output_tok += est_tokens(&vr.response);
-                }
-                if let Some(js) = &vr.judge_score {
-                    judge_input_tok += est_tokens(&vr.prompt_preview)
-                        + est_tokens(&vr.response)
-                        + 125;
-                    judge_output_tok += est_tokens(&js.reasoning);
+                    if let Some(js) = &vr.judge_score {
+                        judge_input_tok +=
+                            est_tokens(&vr.prompt_preview) + est_tokens(&vr.response) + 125;
+                        judge_output_tok += est_tokens(&js.reasoning);
+                    }
                 }
             }
-        }
 
-        serde_json::json!({
-            "agent_id": ar.agent_id,
-            "model": ar.model,
-            "input_tok": input_tok,
-            "output_tok": output_tok,
-            "judge_input_tok": judge_input_tok,
-            "judge_output_tok": judge_output_tok,
-            "has_judge": judge_input_tok > 0,
+            serde_json::json!({
+                "agent_id": ar.agent_id,
+                "model": ar.model,
+                "input_tok": input_tok,
+                "output_tok": output_tok,
+                "judge_input_tok": judge_input_tok,
+                "judge_output_tok": judge_output_tok,
+                "has_judge": judge_input_tok > 0,
+            })
         })
-    }).collect();
+        .collect();
 
     serde_json::json!({
         "leaderboard": leaderboard,
@@ -1057,7 +1097,8 @@ fn build_embedded_json(report: &ComparisonReport) -> String {
         "reports": reports,
         "cost_data": cost_data,
         "judge_model": judge_model_name,
-    }).to_string()
+    })
+    .to_string()
 }
 
 // ─── Category heatmap table ───────────────────────────────────────────────────
@@ -1077,7 +1118,10 @@ fn build_category_heatmap(report: &ComparisonReport) -> String {
 
     for agent in &matrix.agents {
         html.push_str("<tr>");
-        html.push_str(&format!("<td class='agent-name'>{}</td>", html_escape(agent)));
+        html.push_str(&format!(
+            "<td class='agent-name'>{}</td>",
+            html_escape(agent)
+        ));
 
         let mut sum = 0.0f32;
         let mut count = 0u32;
@@ -1099,7 +1143,10 @@ fn build_category_heatmap(report: &ComparisonReport) -> String {
         let mean_cell = if count > 0 {
             let m = sum / count as f32;
             let bg = score_bg_css(m, false);
-            format!("<td style='background:{bg};font-weight:700'>{:.0}%</td>", m * 100.0)
+            format!(
+                "<td style='background:{bg};font-weight:700'>{:.0}%</td>",
+                m * 100.0
+            )
         } else {
             "<td>–</td>".to_string()
         };
@@ -1128,9 +1175,16 @@ fn build_check_heatmap(report: &ComparisonReport) -> String {
 
     for agent in &hm.agents {
         html.push_str("<tr>");
-        html.push_str(&format!("<td class='agent-name'>{}</td>", html_escape(agent)));
+        html.push_str(&format!(
+            "<td class='agent-name'>{}</td>",
+            html_escape(agent)
+        ));
         for check in &hm.checks {
-            let rate = hm.failure_rates.get(agent).and_then(|m| m.get(check)).copied();
+            let rate = hm
+                .failure_rates
+                .get(agent)
+                .and_then(|m| m.get(check))
+                .copied();
             let (cell, bg) = match rate {
                 Some(r) => (format!("{:.0}%", r * 100.0), failure_rate_bg_css(r)),
                 None => ("–".to_string(), "transparent".to_string()),
@@ -1156,13 +1210,20 @@ fn build_variation_matrix(report: &ComparisonReport) -> String {
     html.push_str("<th class='left'>Agent</th>");
     for slot in &vm.slots {
         let abbrev = abbreviate_slot(slot);
-        html.push_str(&format!("<th title='{}'>{}</th>", html_escape(slot), html_escape(&abbrev)));
+        html.push_str(&format!(
+            "<th title='{}'>{}</th>",
+            html_escape(slot),
+            html_escape(&abbrev)
+        ));
     }
     html.push_str("<th>%</th></tr></thead><tbody>");
 
     for agent in &vm.agents {
         html.push_str("<tr>");
-        html.push_str(&format!("<td class='agent-name'>{}</td>", html_escape(agent)));
+        html.push_str(&format!(
+            "<td class='agent-name'>{}</td>",
+            html_escape(agent)
+        ));
 
         let mut pass_count = 0u32;
         let total = vm.slots.len() as u32;
@@ -1183,9 +1244,15 @@ fn build_variation_matrix(report: &ComparisonReport) -> String {
             }
         }
 
-        let pct = if total > 0 { pass_count * 100 / total } else { 0 };
+        let pct = if total > 0 {
+            pass_count * 100 / total
+        } else {
+            0
+        };
         let bg = score_bg_css(pct as f32 / 100.0, false);
-        html.push_str(&format!("<td style='background:{bg};font-weight:700'>{pct}%</td>"));
+        html.push_str(&format!(
+            "<td style='background:{bg};font-weight:700'>{pct}%</td>"
+        ));
         html.push_str("</tr>");
     }
 
@@ -1213,7 +1280,11 @@ fn build_review_panel(report: &ComparisonReport) -> String {
     }
 
     // Ordered agent list from leaderboard (rank order, best first).
-    let agents: Vec<&str> = report.leaderboard.iter().map(|r| r.agent_id.as_str()).collect();
+    let agents: Vec<&str> = report
+        .leaderboard
+        .iter()
+        .map(|r| r.agent_id.as_str())
+        .collect();
 
     // Scenario/variation structure from first agent report.
     let first = &report.agent_reports[0];
@@ -1242,15 +1313,21 @@ fn build_review_panel(report: &ComparisonReport) -> String {
     // ── Scenario accordions ──────────────────────────────────────────────────
     for scenario in &first.scenarios {
         // Per-agent pass counts for this scenario (shown in header).
-        let pass_summary: Vec<String> = agents.iter().map(|a| {
-            let passed = lookup.get(*a)
-                .and_then(|s| s.get(scenario.scenario_id.as_str()))
-                .map(|vars| vars.values().filter(|v| v.passed).count())
-                .unwrap_or(0);
-            let total = scenario.variations.len();
-            format!("{passed}/{total}")
-        }).collect();
-        let summary_str = agents.iter().zip(pass_summary.iter())
+        let pass_summary: Vec<String> = agents
+            .iter()
+            .map(|a| {
+                let passed = lookup
+                    .get(*a)
+                    .and_then(|s| s.get(scenario.scenario_id.as_str()))
+                    .map(|vars| vars.values().filter(|v| v.passed).count())
+                    .unwrap_or(0);
+                let total = scenario.variations.len();
+                format!("{passed}/{total}")
+            })
+            .collect();
+        let summary_str = agents
+            .iter()
+            .zip(pass_summary.iter())
             .map(|(a, s)| format!("{}: {}", short_agent_id(a), s))
             .collect::<Vec<_>>()
             .join("  ");
@@ -1264,9 +1341,9 @@ fn build_review_panel(report: &ComparisonReport) -> String {
                <span class='cat-pill'>{cat}</span>\
                <span class='scen-pass-summary'>{summary}</span>\
              </div>",
-            sid     = html_escape(&scenario.scenario_id),
-            name    = html_escape(&scenario.scenario_name),
-            cat     = html_escape(&scenario.category),
+            sid = html_escape(&scenario.scenario_id),
+            name = html_escape(&scenario.scenario_name),
+            cat = html_escape(&scenario.category),
             summary = html_escape(&summary_str),
         ));
 
@@ -1281,19 +1358,24 @@ fn build_review_panel(report: &ComparisonReport) -> String {
                    <span class='var-label'>{vid}</span>\
                    <span class='var-prompt-text'>{prompt}</span>\
                  </div>",
-                vid    = html_escape(&variation.variation_id),
+                vid = html_escape(&variation.variation_id),
                 prompt = html_escape(&variation.prompt_preview),
             ));
 
             out.push_str("<div class='response-grid'>");
 
             for agent in &agents {
-                let var_result = lookup.get(*agent)
+                let var_result = lookup
+                    .get(*agent)
                     .and_then(|s| s.get(scenario.scenario_id.as_str()))
                     .and_then(|v| v.get(variation.variation_id.as_str()));
 
                 // Card visibility: only -full agents shown by default.
-                let hidden = if agent.ends_with("-full") { "" } else { " style='display:none'" };
+                let hidden = if agent.ends_with("-full") {
+                    ""
+                } else {
+                    " style='display:none'"
+                };
 
                 match var_result {
                     Some(vr) => {
@@ -1306,10 +1388,22 @@ fn build_review_panel(report: &ComparisonReport) -> String {
                         // Score badge: show avg + trial count when >1 trial.
                         let n_trials = vr.trial_scores.len();
                         let score_pct = if n_trials > 1 {
-                            let min = vr.trial_scores.iter().cloned().fold(f32::INFINITY, f32::min);
-                            let max = vr.trial_scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-                            format!("{:.0}% avg <span class='trial-badge' title='range {:.0}–{:.0}%'>×{n_trials}</span>",
-                                vr.score * 100.0, min * 100.0, max * 100.0)
+                            let min = vr
+                                .trial_scores
+                                .iter()
+                                .cloned()
+                                .fold(f32::INFINITY, f32::min);
+                            let max = vr
+                                .trial_scores
+                                .iter()
+                                .cloned()
+                                .fold(f32::NEG_INFINITY, f32::max);
+                            format!(
+                                "{:.0}% avg <span class='trial-badge' title='range {:.0}–{:.0}%'>×{n_trials}</span>",
+                                vr.score * 100.0,
+                                min * 100.0,
+                                max * 100.0
+                            )
                         } else {
                             format!("{:.0}%", vr.score * 100.0)
                         };
@@ -1332,7 +1426,9 @@ fn build_review_panel(report: &ComparisonReport) -> String {
                                 "<span class='judge-badge' title='Judge: accuracy {}/5  completeness {}/5  clarity {}/5. {}'>\
                                    <span class='jb-star'>{stars}</span> {}/5\
                                  </span>",
-                                js.accuracy, js.completeness, js.clarity,
+                                js.accuracy,
+                                js.completeness,
+                                js.clarity,
                                 html_escape(&js.reasoning),
                                 js.overall,
                             )
@@ -1365,16 +1461,20 @@ fn build_review_panel(report: &ComparisonReport) -> String {
                         if n_trials > 1 {
                             // Show each trial's response in a labelled block.
                             let responses = if vr.trial_responses.is_empty() {
-                                std::iter::repeat(vr.response.as_str())
-                                    .take(n_trials)
+                                std::iter::repeat_n(vr.response.as_str(), n_trials)
                                     .map(str::to_string)
                                     .collect::<Vec<_>>()
                             } else {
                                 vr.trial_responses.clone()
                             };
                             for (i, resp) in responses.iter().enumerate() {
-                                let trial_score = vr.trial_scores.get(i).copied().unwrap_or(vr.score);
-                                let t_cls = if trial_score >= 0.5 { "s-pass" } else { "s-fail" };
+                                let trial_score =
+                                    vr.trial_scores.get(i).copied().unwrap_or(vr.score);
+                                let t_cls = if trial_score >= 0.5 {
+                                    "s-pass"
+                                } else {
+                                    "s-fail"
+                                };
                                 out.push_str(&format!(
                                     "<div class='trial-block'>\
                                        <div class='trial-lbl'>Trial {} &nbsp;<span class='{t_cls}'>{:.0}%</span></div>",
@@ -1383,7 +1483,10 @@ fn build_review_panel(report: &ComparisonReport) -> String {
                                 if resp.trim().is_empty() {
                                     out.push_str("<div class='response-body'><span class='response-empty'>empty response</span></div>");
                                 } else {
-                                    out.push_str(&format!("<div class='response-body'>{}</div>", html_escape(resp)));
+                                    out.push_str(&format!(
+                                        "<div class='response-body'>{}</div>",
+                                        html_escape(resp)
+                                    ));
                                 }
                                 out.push_str("</div>"); // trial-block
                             }
@@ -1418,13 +1521,17 @@ fn build_review_panel(report: &ComparisonReport) -> String {
                         ));
                         out.push_str("<div class='checks-list'>");
                         for check in &vr.checks {
-                            let (row_cls, icon) = if check.passed { ("ck-pass", "✓") } else { ("ck-fail", "✗") };
+                            let (row_cls, icon) = if check.passed {
+                                ("ck-pass", "✓")
+                            } else {
+                                ("ck-fail", "✗")
+                            };
                             out.push_str(&format!(
                                 "<div class='check-row {row_cls}'>\
                                    <span class='ck-name'>{icon} {name}</span>\
                                    <span class='ck-detail'>{detail}</span>\
                                  </div>",
-                                name   = html_escape(&check.name),
+                                name = html_escape(&check.name),
                                 detail = html_escape(&check.details),
                             ));
                         }
@@ -1464,11 +1571,17 @@ fn build_review_panel(report: &ComparisonReport) -> String {
 // ─── About page ───────────────────────────────────────────────────────────────
 
 fn build_about_page(report: &ComparisonReport) -> String {
-    let agent_count    = report.leaderboard.len();
-    let scenario_count = report.agent_reports.first().map(|r| r.scenarios.len()).unwrap_or(0);
-    let timestamp      = report.timestamp.format("%Y-%m-%d %H:%M UTC");
-    let run_id         = html_escape(&report.run_id);
-    let trials = report.agent_reports.first()
+    let agent_count = report.leaderboard.len();
+    let scenario_count = report
+        .agent_reports
+        .first()
+        .map(|r| r.scenarios.len())
+        .unwrap_or(0);
+    let timestamp = report.timestamp.format("%Y-%m-%d %H:%M UTC");
+    let run_id = html_escape(&report.run_id);
+    let trials = report
+        .agent_reports
+        .first()
         .and_then(|r| r.scenarios.first())
         .and_then(|s| s.variations.first())
         .map(|v| v.trial_scores.len().max(1))
@@ -1484,7 +1597,8 @@ fn build_about_page(report: &ComparisonReport) -> String {
         }).collect::<String>())
         .unwrap_or_default();
 
-    format!(r#"<div class="about-grid">
+    format!(
+        r#"<div class="about-grid">
 
 <!-- Left column -->
 <div class="about-col">
@@ -1559,11 +1673,11 @@ fn build_about_page(report: &ComparisonReport) -> String {
 </div><!-- /about-col right -->
 
 </div><!-- /about-grid -->"#,
-        agent_count    = agent_count,
+        agent_count = agent_count,
         scenario_count = scenario_count,
-        trials         = trials,
-        timestamp      = timestamp,
-        run_id         = run_id,
+        trials = trials,
+        timestamp = timestamp,
+        run_id = run_id,
         scenarios_html = scenarios_html,
     )
 }
@@ -1615,22 +1729,27 @@ fn build_models_cost_panel(_report: &ComparisonReport) -> String {
 // ─── Chart.js initialisation code ────────────────────────────────────────────
 
 fn build_chart_init(report: &ComparisonReport) -> String {
-    let lb  = &report.leaderboard;
+    let lb = &report.leaderboard;
     let deg = &report.profile_degradation;
     let lat = &report.latency_summary;
     let cat_matrix = &report.category_matrix;
 
-    let lb_labels  = js_string_array(lb.iter().map(|r| r.agent_id.as_str()));
-    let lb_data: Vec<String> = lb.iter().map(|r| format!("{:.1}", r.overall_score * 100.0)).collect();
-    let lb_colors  = js_string_array(lb.iter().map(|r| score_js_color(r.overall_score)));
+    let lb_labels = js_string_array(lb.iter().map(|r| r.agent_id.as_str()));
+    let lb_data: Vec<String> = lb
+        .iter()
+        .map(|r| format!("{:.1}", r.overall_score * 100.0))
+        .collect();
+    let lb_colors = js_string_array(lb.iter().map(|r| score_js_color(r.overall_score)));
 
     let deg_labels = js_string_array(deg.iter().map(|d| d.family.as_str()));
-    let deg_full:  Vec<String> = deg.iter().map(|d| opt_f32_js(d.full)).collect();
-    let deg_iter:  Vec<String> = deg.iter().map(|d| opt_f32_js(d.iterative)).collect();
-    let deg_sand:  Vec<String> = deg.iter().map(|d| opt_f32_js(d.sandboxed)).collect();
+    let deg_full: Vec<String> = deg.iter().map(|d| opt_f32_js(d.full)).collect();
+    let deg_iter: Vec<String> = deg.iter().map(|d| opt_f32_js(d.iterative)).collect();
+    let deg_sand: Vec<String> = deg.iter().map(|d| opt_f32_js(d.sandboxed)).collect();
 
-    let radar_labels   = js_string_array(cat_matrix.categories.iter().map(|s| s.as_str()));
-    let radar_agents: Vec<_> = cat_matrix.agents.iter()
+    let radar_labels = js_string_array(cat_matrix.categories.iter().map(|s| s.as_str()));
+    let radar_agents: Vec<_> = cat_matrix
+        .agents
+        .iter()
         .filter(|a| a.ends_with("-full"))
         .take(6)
         .collect();
@@ -1723,18 +1842,18 @@ new Chart(document.getElementById('chart-latency'),{{
   }},
   options:{{responsive:true,scales:{{y:{{beginAtZero:true}}}}}}
 }});"#,
-        lb_labels      = lb_labels,
-        lb_data        = lb_data.join(","),
-        lb_colors      = lb_colors,
-        deg_labels     = deg_labels,
-        deg_full       = deg_full.join(","),
-        deg_iter       = deg_iter.join(","),
-        deg_sand       = deg_sand.join(","),
-        radar_labels   = radar_labels,
+        lb_labels = lb_labels,
+        lb_data = lb_data.join(","),
+        lb_colors = lb_colors,
+        deg_labels = deg_labels,
+        deg_full = deg_full.join(","),
+        deg_iter = deg_iter.join(","),
+        deg_sand = deg_sand.join(","),
+        radar_labels = radar_labels,
         radar_datasets = radar_datasets,
-        lat_labels     = lat_labels,
-        lat_p50        = lat_p50.join(","),
-        lat_p95        = lat_p95.join(","),
+        lat_labels = lat_labels,
+        lat_p50 = lat_p50.join(","),
+        lat_p95 = lat_p95.join(","),
     )
 }
 
@@ -1762,7 +1881,9 @@ fn build_radar_datasets(report: &ComparisonReport, agents: &[&String]) -> String
 // ─── CSS colour helpers ───────────────────────────────────────────────────────
 
 fn score_bg_css(score: f32, empty: bool) -> String {
-    if empty { return "transparent".to_string(); }
+    if empty {
+        return "transparent".to_string();
+    }
     let hue = (score * 120.0).round() as u32;
     format!("hsl({hue},60%,90%)")
 }
@@ -1773,14 +1894,20 @@ fn failure_rate_bg_css(rate: f32) -> String {
 }
 
 fn score_js_color(score: f32) -> &'static str {
-    if score >= 0.85 { "#238636" } else if score >= 0.70 { "#9e6a03" } else { "#da3633" }
+    if score >= 0.85 {
+        "#238636"
+    } else if score >= 0.70 {
+        "#9e6a03"
+    } else {
+        "#da3633"
+    }
 }
 
 // ─── JS helpers ───────────────────────────────────────────────────────────────
 
 static PALETTE_JS: &[&str] = &[
-    "#58a6ff","#3fb950","#d29922","#f78166","#bc8cff",
-    "#56d364","#e3b341","#ff7b72","#79c0ff","#7ee787",
+    "#58a6ff", "#3fb950", "#d29922", "#f78166", "#bc8cff", "#56d364", "#e3b341", "#ff7b72",
+    "#79c0ff", "#7ee787",
 ];
 
 fn js_string(s: &str) -> String {
@@ -1795,7 +1922,7 @@ fn js_string_array<'a, I: Iterator<Item = &'a str>>(items: I) -> String {
 fn opt_f32_js(v: Option<f32>) -> String {
     match v {
         Some(f) => format!("{:.1}", f * 100.0),
-        None    => "null".to_string(),
+        None => "null".to_string(),
     }
 }
 
@@ -1803,9 +1930,9 @@ fn opt_f32_js(v: Option<f32>) -> String {
 
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
-     .replace('<', "&lt;")
-     .replace('>', "&gt;")
-     .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn abbreviate_slot(slot: &str) -> String {
@@ -1823,11 +1950,11 @@ fn abbreviate_slot(slot: &str) -> String {
 /// `"gestura-full"` → `"g-full"`, `"claude-code-full"` → `"cc-full"`
 fn short_agent_id(id: &str) -> String {
     let abbrevs = [
-        ("gestura-",     "g-"),
+        ("gestura-", "g-"),
         ("claude-code-", "cc-"),
-        ("augment-",     "aug-"),
-        ("codex-",       "cx-"),
-        ("opencode-",    "oc-"),
+        ("augment-", "aug-"),
+        ("codex-", "cx-"),
+        ("opencode-", "oc-"),
     ];
     for (prefix, short) in abbrevs {
         if let Some(rest) = id.strip_prefix(prefix) {

@@ -34,22 +34,22 @@ use std::{collections::HashMap, fmt, fs, path::Path};
 
 // ─── Embedded TOML profiles ───────────────────────────────────────────────────
 
-const BUILTIN_BASELINE: &str              = include_str!("../../agents/baseline.toml");
-const BUILTIN_GESTURA_FULL: &str          = include_str!("../../agents/gestura-full.toml");
-const BUILTIN_GESTURA_SB: &str            = include_str!("../../agents/gestura-sandboxed.toml");
-const BUILTIN_GESTURA_ITER: &str          = include_str!("../../agents/gestura-iterative.toml");
-const BUILTIN_CLAUDE_CODE_FULL: &str      = include_str!("../../agents/claude-code-full.toml");
-const BUILTIN_CLAUDE_CODE_SB: &str        = include_str!("../../agents/claude-code-sandboxed.toml");
-const BUILTIN_CLAUDE_CODE_ITER: &str      = include_str!("../../agents/claude-code-iterative.toml");
-const BUILTIN_AUGMENT_FULL: &str          = include_str!("../../agents/augment-full.toml");
-const BUILTIN_AUGMENT_SB: &str            = include_str!("../../agents/augment-sandboxed.toml");
-const BUILTIN_AUGMENT_ITER: &str          = include_str!("../../agents/augment-iterative.toml");
-const BUILTIN_CODEX_FULL: &str            = include_str!("../../agents/codex-full.toml");
-const BUILTIN_CODEX_SB: &str              = include_str!("../../agents/codex-sandboxed.toml");
-const BUILTIN_CODEX_ITER: &str            = include_str!("../../agents/codex-iterative.toml");
-const BUILTIN_OPENCODE_FULL: &str         = include_str!("../../agents/opencode-full.toml");
-const BUILTIN_OPENCODE_SB: &str           = include_str!("../../agents/opencode-sandboxed.toml");
-const BUILTIN_OPENCODE_ITER: &str         = include_str!("../../agents/opencode-iterative.toml");
+const BUILTIN_BASELINE: &str = include_str!("../../agents/baseline.toml");
+const BUILTIN_GESTURA_FULL: &str = include_str!("../../agents/gestura-full.toml");
+const BUILTIN_GESTURA_SB: &str = include_str!("../../agents/gestura-sandboxed.toml");
+const BUILTIN_GESTURA_ITER: &str = include_str!("../../agents/gestura-iterative.toml");
+const BUILTIN_CLAUDE_CODE_FULL: &str = include_str!("../../agents/claude-code-full.toml");
+const BUILTIN_CLAUDE_CODE_SB: &str = include_str!("../../agents/claude-code-sandboxed.toml");
+const BUILTIN_CLAUDE_CODE_ITER: &str = include_str!("../../agents/claude-code-iterative.toml");
+const BUILTIN_AUGMENT_FULL: &str = include_str!("../../agents/augment-full.toml");
+const BUILTIN_AUGMENT_SB: &str = include_str!("../../agents/augment-sandboxed.toml");
+const BUILTIN_AUGMENT_ITER: &str = include_str!("../../agents/augment-iterative.toml");
+const BUILTIN_CODEX_FULL: &str = include_str!("../../agents/codex-full.toml");
+const BUILTIN_CODEX_SB: &str = include_str!("../../agents/codex-sandboxed.toml");
+const BUILTIN_CODEX_ITER: &str = include_str!("../../agents/codex-iterative.toml");
+const BUILTIN_OPENCODE_FULL: &str = include_str!("../../agents/opencode-full.toml");
+const BUILTIN_OPENCODE_SB: &str = include_str!("../../agents/opencode-sandboxed.toml");
+const BUILTIN_OPENCODE_ITER: &str = include_str!("../../agents/opencode-iterative.toml");
 
 /// All agent IDs recognised by [`EvalConfig::load_builtin`].
 pub const BUILTIN_AGENT_IDS: &[&str] = &[
@@ -72,21 +72,21 @@ pub const BUILTIN_AGENT_IDS: &[&str] = &[
 
 fn builtin_agent_toml(id: &str) -> Result<&'static str, ConfigError> {
     match id {
-        "gestura-full"           => Ok(BUILTIN_GESTURA_FULL),
-        "gestura-sandboxed"      => Ok(BUILTIN_GESTURA_SB),
-        "gestura-iterative"      => Ok(BUILTIN_GESTURA_ITER),
-        "claude-code-full"       => Ok(BUILTIN_CLAUDE_CODE_FULL),
-        "claude-code-sandboxed"  => Ok(BUILTIN_CLAUDE_CODE_SB),
-        "claude-code-iterative"  => Ok(BUILTIN_CLAUDE_CODE_ITER),
-        "augment-full"           => Ok(BUILTIN_AUGMENT_FULL),
-        "augment-sandboxed"      => Ok(BUILTIN_AUGMENT_SB),
-        "augment-iterative"      => Ok(BUILTIN_AUGMENT_ITER),
-        "codex-full"             => Ok(BUILTIN_CODEX_FULL),
-        "codex-sandboxed"        => Ok(BUILTIN_CODEX_SB),
-        "codex-iterative"        => Ok(BUILTIN_CODEX_ITER),
-        "opencode-full"          => Ok(BUILTIN_OPENCODE_FULL),
-        "opencode-sandboxed"     => Ok(BUILTIN_OPENCODE_SB),
-        "opencode-iterative"     => Ok(BUILTIN_OPENCODE_ITER),
+        "gestura-full" => Ok(BUILTIN_GESTURA_FULL),
+        "gestura-sandboxed" => Ok(BUILTIN_GESTURA_SB),
+        "gestura-iterative" => Ok(BUILTIN_GESTURA_ITER),
+        "claude-code-full" => Ok(BUILTIN_CLAUDE_CODE_FULL),
+        "claude-code-sandboxed" => Ok(BUILTIN_CLAUDE_CODE_SB),
+        "claude-code-iterative" => Ok(BUILTIN_CLAUDE_CODE_ITER),
+        "augment-full" => Ok(BUILTIN_AUGMENT_FULL),
+        "augment-sandboxed" => Ok(BUILTIN_AUGMENT_SB),
+        "augment-iterative" => Ok(BUILTIN_AUGMENT_ITER),
+        "codex-full" => Ok(BUILTIN_CODEX_FULL),
+        "codex-sandboxed" => Ok(BUILTIN_CODEX_SB),
+        "codex-iterative" => Ok(BUILTIN_CODEX_ITER),
+        "opencode-full" => Ok(BUILTIN_OPENCODE_FULL),
+        "opencode-sandboxed" => Ok(BUILTIN_OPENCODE_SB),
+        "opencode-iterative" => Ok(BUILTIN_OPENCODE_ITER),
         other => Err(ConfigError::UnknownAgent(other.to_string())),
     }
 }
@@ -110,14 +110,22 @@ impl fmt::Display for ConfigError {
                 BUILTIN_AGENT_IDS.join(", ")
             ),
             Self::ParseError(e) => write!(f, "TOML parse error: {e}"),
-            Self::IoError(e)    => write!(f, "IO error: {e}"),
+            Self::IoError(e) => write!(f, "IO error: {e}"),
         }
     }
 }
 
 impl std::error::Error for ConfigError {}
-impl From<toml::de::Error>  for ConfigError { fn from(e: toml::de::Error)  -> Self { Self::ParseError(e) } }
-impl From<std::io::Error>   for ConfigError { fn from(e: std::io::Error)   -> Self { Self::IoError(e) } }
+impl From<toml::de::Error> for ConfigError {
+    fn from(e: toml::de::Error) -> Self {
+        Self::ParseError(e)
+    }
+}
+impl From<std::io::Error> for ConfigError {
+    fn from(e: std::io::Error) -> Self {
+        Self::IoError(e)
+    }
+}
 
 // ─── Top-level config ─────────────────────────────────────────────────────────
 
@@ -127,14 +135,21 @@ impl From<std::io::Error>   for ConfigError { fn from(e: std::io::Error)   -> Se
 /// Any field absent in the overlay inherits the baseline value.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EvalConfig {
-    #[serde(default)] pub agent:       AgentMeta,
-    #[serde(default)] pub model:       ModelConfig,
-    #[serde(default)] pub permissions: PermissionConfig,
-    #[serde(default)] pub execution:   ExecutionConfig,
-    #[serde(default)] pub subprocess:  SubprocessDef,
-    #[serde(default)] pub thresholds:  Thresholds,
+    #[serde(default)]
+    pub agent: AgentMeta,
+    #[serde(default)]
+    pub model: ModelConfig,
+    #[serde(default)]
+    pub permissions: PermissionConfig,
+    #[serde(default)]
+    pub execution: ExecutionConfig,
+    #[serde(default)]
+    pub subprocess: SubprocessDef,
+    #[serde(default)]
+    pub thresholds: Thresholds,
     /// Per-scenario overrides keyed by scenario ID (e.g. `"s3_planning"`).
-    #[serde(default)] pub scenarios:   HashMap<String, ScenarioOverride>,
+    #[serde(default)]
+    pub scenarios: HashMap<String, ScenarioOverride>,
 }
 
 impl EvalConfig {
@@ -186,8 +201,8 @@ impl EvalConfig {
     // ── Internals ─────────────────────────────────────────────────────────────
 
     fn merge_toml(base: &str, overlay: &str) -> Result<Self, ConfigError> {
-        let mut base_val: toml::Value  = toml::from_str(base)?;
-        let overlay_val: toml::Value   = toml::from_str(overlay)?;
+        let mut base_val: toml::Value = toml::from_str(base)?;
+        let overlay_val: toml::Value = toml::from_str(overlay)?;
         deep_merge(&mut base_val, overlay_val);
         Ok(toml::Value::try_into(base_val)?)
     }
@@ -209,11 +224,12 @@ fn deep_merge(base: &mut toml::Value, overlay: toml::Value) {
             for (k, v) in o {
                 match b.get_mut(&k) {
                     Some(existing) => deep_merge(existing, v),
-                    None           => { b.insert(k, v); }
+                    None => {
+                        b.insert(k, v);
+                    }
                 }
             }
         }
         (base, overlay) => *base = overlay,
     }
 }
-

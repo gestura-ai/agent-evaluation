@@ -7,7 +7,14 @@
 //! what `args_prefix` to prepend, what environment variables to forward, what
 //! pass/fail thresholds to apply, and any per-scenario rubric overrides.
 
-use std::{io::Read, path::PathBuf, process::{Command, Stdio}, sync::mpsc, thread, time::{Duration, Instant}};
+use std::{
+    io::Read,
+    path::PathBuf,
+    process::{Command, Stdio},
+    sync::mpsc,
+    thread,
+    time::{Duration, Instant},
+};
 
 use tracing::{debug, info, warn};
 
@@ -24,13 +31,13 @@ use crate::{
 
 /// Raw outcome of a single subprocess invocation (one trial of one variation).
 struct TrialOutcome {
-    response:       String,
+    response: String,
     pipeline_error: Option<String>,
-    duration_ms:    u64,
-    checks:         Vec<CheckResult>,
-    score:          f32,
-    passed:         bool,
-    judge_score:    Option<crate::judge::JudgeScore>,
+    duration_ms: u64,
+    checks: Vec<CheckResult>,
+    score: f32,
+    passed: bool,
+    judge_score: Option<crate::judge::JudgeScore>,
 }
 
 /// Runtime options for one eval run — agent profile + ephemeral CLI flags.
@@ -67,7 +74,10 @@ impl CliRunnerOptions {
 
     /// Build options from a named built-in agent profile.
     pub fn for_agent(agent_id: &str) -> Result<Self, crate::config::ConfigError> {
-        Ok(Self { eval_config: EvalConfig::load_builtin(agent_id)?, ..Self::new() })
+        Ok(Self {
+            eval_config: EvalConfig::load_builtin(agent_id)?,
+            ..Self::new()
+        })
     }
 }
 
@@ -158,7 +168,11 @@ impl CliEvalRunner {
         }
         let total = var_results.len() as f32;
         let passed_count = var_results.iter().filter(|v| v.passed).count() as f32;
-        let score = if total > 0.0 { passed_count / total } else { 1.0 };
+        let score = if total > 0.0 {
+            passed_count / total
+        } else {
+            1.0
+        };
         ScenarioResult {
             scenario_id: scenario.id.clone(),
             scenario_name: scenario.name.clone(),
@@ -169,11 +183,7 @@ impl CliEvalRunner {
         }
     }
 
-    fn run_variation(
-        &self,
-        scenario: &EvalScenario,
-        variation: &EvalVariation,
-    ) -> VariationResult {
+    fn run_variation(&self, scenario: &EvalScenario, variation: &EvalVariation) -> VariationResult {
         debug!(scenario = %scenario.id, variation = %variation.id, "variation");
         let prompt_preview = truncate(&variation.prompt, 80);
         let cfg = &self.options.eval_config;
@@ -198,19 +208,21 @@ impl CliEvalRunner {
             // Throttle between trials (same budget as inter-variation delay).
             // Skip after the last trial — the inter-variation delay below handles that.
             if trial_idx < trials - 1 && cfg.execution.delay_between_variations_ms > 0 {
-                thread::sleep(Duration::from_millis(cfg.execution.delay_between_variations_ms));
+                thread::sleep(Duration::from_millis(
+                    cfg.execution.delay_between_variations_ms,
+                ));
             }
         }
 
         // ── Aggregate ─────────────────────────────────────────────────────────
-        let trial_scores: Vec<f32>    = outcomes.iter().map(|o| o.score).collect();
+        let trial_scores: Vec<f32> = outcomes.iter().map(|o| o.score).collect();
         let trial_responses: Vec<String> = outcomes.iter().map(|o| o.response.clone()).collect();
-        let total_duration_ms: u64    = outcomes.iter().map(|o| o.duration_ms).sum();
+        let total_duration_ms: u64 = outcomes.iter().map(|o| o.duration_ms).sum();
 
-        let avg_score     = trial_scores.iter().sum::<f32>() / trial_scores.len() as f32;
+        let avg_score = trial_scores.iter().sum::<f32>() / trial_scores.len() as f32;
         let passed_trials = outcomes.iter().filter(|o| o.passed).count();
         // Majority vote: more than half of trials must pass.
-        let passed        = passed_trials * 2 > outcomes.len();
+        let passed = passed_trials * 2 > outcomes.len();
 
         // Representative trial: the one whose score is closest to the average.
         // Used for `checks` and `pipeline_error` in the aggregate result.
@@ -218,7 +230,8 @@ impl CliEvalRunner {
             .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| {
-                (*a - avg_score).abs()
+                (*a - avg_score)
+                    .abs()
                     .partial_cmp(&(*b - avg_score).abs())
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
@@ -229,34 +242,36 @@ impl CliEvalRunner {
         let rep = outcomes.swap_remove(rep_idx);
 
         let result = VariationResult {
-            variation_id:    variation.id.clone(),
+            variation_id: variation.id.clone(),
             prompt_preview,
-            response:        rep.response,
-            duration_ms:     total_duration_ms,
-            pipeline_error:  rep.pipeline_error,
-            checks:          rep.checks,
-            score:           avg_score,
+            response: rep.response,
+            duration_ms: total_duration_ms,
+            pipeline_error: rep.pipeline_error,
+            checks: rep.checks,
+            score: avg_score,
             passed,
             trial_scores,
             trial_responses,
-            judge_score:     rep.judge_score,
+            judge_score: rep.judge_score,
         };
 
         if let Some(ref cb) = self.options.progress {
             cb(ProgressEvent::VariationDone {
-                agent_id:     cfg.agent.id.clone(),
-                scenario_id:  scenario.id.clone(),
+                agent_id: cfg.agent.id.clone(),
+                scenario_id: scenario.id.clone(),
                 variation_id: variation.id.clone(),
-                passed:       result.passed,
-                score:        result.score,
-                duration_ms:  result.duration_ms,
+                passed: result.passed,
+                score: result.score,
+                duration_ms: result.duration_ms,
             });
         }
 
         // Inter-variation throttle — fires after progress so the terminal shows
         // the result immediately, then pauses before the next variation starts.
         if cfg.execution.delay_between_variations_ms > 0 {
-            thread::sleep(Duration::from_millis(cfg.execution.delay_between_variations_ms));
+            thread::sleep(Duration::from_millis(
+                cfg.execution.delay_between_variations_ms,
+            ));
         }
 
         result
@@ -296,15 +311,17 @@ impl CliEvalRunner {
                     || is_silent_transient_failure(err.as_deref(), &text);
 
                 if is_rl && attempt < max_attempts {
-                    let wait_secs = cfg.execution.rate_limit_backoff_secs
+                    let wait_secs = cfg
+                        .execution
+                        .rate_limit_backoff_secs
                         .saturating_mul(1u64 << (attempt - 1).min(3));
 
                     if let Some(ref cb) = self.options.progress {
                         cb(ProgressEvent::RateLimitRetry {
-                            agent_id:     cfg.agent.id.clone(),
-                            scenario_id:  scenario.id.clone(),
+                            agent_id: cfg.agent.id.clone(),
+                            scenario_id: scenario.id.clone(),
                             variation_id: variation.id.clone(),
-                            attempt:      attempt as u32,
+                            attempt: attempt as u32,
                             max_attempts: max_attempts as u32,
                             wait_secs,
                         });
@@ -322,16 +339,19 @@ impl CliEvalRunner {
         let eval = RuleEvaluator::evaluate(variation, &response_text);
 
         // LLM judge runs after rule evaluation (optional, non-fatal).
-        let judge_score = self.options.judge.as_ref()
+        let judge_score = self
+            .options
+            .judge
+            .as_ref()
             .and_then(|j| j.judge(variation, &response_text));
 
         TrialOutcome {
-            response:       response_text,
+            response: response_text,
             pipeline_error,
             duration_ms,
-            checks:         eval.checks,
-            score:          eval.score,
-            passed:         eval.passed,
+            checks: eval.checks,
+            score: eval.score,
+            passed: eval.passed,
             judge_score,
         }
     }
@@ -415,7 +435,9 @@ impl CliEvalRunner {
         // Wait for child exit on a background thread; bound the main-thread wait
         // to timeout_secs so a stalled subprocess never blocks the harness.
         let (exit_tx, exit_rx) = mpsc::channel();
-        thread::spawn(move || { let _ = exit_tx.send(child.wait()); });
+        thread::spawn(move || {
+            let _ = exit_tx.send(child.wait());
+        });
 
         let exit_status = match exit_rx.recv_timeout(timeout) {
             Ok(res) => res,
@@ -441,12 +463,19 @@ impl CliEvalRunner {
                     pid = child_pid,
                     "agent subprocess timed out — killed process group"
                 );
-                return (String::new(), Some(format!("timeout after {}s", cfg.execution.timeout_secs)));
+                return (
+                    String::new(),
+                    Some(format!("timeout after {}s", cfg.execution.timeout_secs)),
+                );
             }
         };
 
-        let raw_stdout = String::from_utf8_lossy(&stdout_rx.recv().unwrap_or_default()).trim().to_string();
-        let stderr = String::from_utf8_lossy(&stderr_rx.recv().unwrap_or_default()).trim().to_string();
+        let raw_stdout = String::from_utf8_lossy(&stdout_rx.recv().unwrap_or_default())
+            .trim()
+            .to_string();
+        let stderr = String::from_utf8_lossy(&stderr_rx.recv().unwrap_or_default())
+            .trim()
+            .to_string();
 
         // Strip configured response prefix (e.g. "Assistant: " labels).
         let stdout = if let Some(ref prefix) = cfg.subprocess.response_strip_prefix {
@@ -511,9 +540,9 @@ fn build_prompt(variation: &EvalVariation) -> String {
     buf.push_str("Continue this conversation and respond to the final user message.\n\n");
     for msg in &variation.history {
         let role = match msg.role.as_str() {
-            "user"      => "User",
+            "user" => "User",
             "assistant" => "Assistant",
-            other       => other,
+            other => other,
         };
         buf.push_str(&format!("{role}: {}\n\n", msg.content));
     }
