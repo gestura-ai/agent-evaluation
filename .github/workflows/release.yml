@@ -1,0 +1,516 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to build (branch, tag, or SHA). Defaults to main.'
+        required: false
+        default: 'main'
+        type: string
+      publish:
+        description: 'Create or update the GitHub release after a successful build.'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref_name || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: stable
+  BINARY_NAME: agent-eval
+
+jobs:
+  prepare:
+    name: Prepare release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.metadata.outputs.publish }}
+      prerelease: ${{ steps.metadata.outputs.prerelease }}
+      release_sha: ${{ steps.metadata.outputs.release_sha }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      version: ${{ steps.metadata.outputs.version }}
+      has_macos_signing: ${{ steps.signing.outputs.has_macos_signing }}
+      has_windows_signing: ${{ steps.signing.outputs.has_windows_signing }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.ref }}
+
+      - name: Resolve release metadata
+        id: metadata
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PUBLISH: ${{ github.event.inputs.publish }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Publish on tag push; respect the manual input otherwise.
+          if [ "$EVENT_NAME" = "push" ]; then
+            publish=true
+          else
+            publish="${INPUT_PUBLISH:-false}"
+          fi
+          echo "publish=${publish}" >> "$GITHUB_OUTPUT"
+
+          # Resolve the tag.
+          if [ "$EVENT_NAME" = "push" ]; then
+            tag="$REF_NAME"
+          else
+            git_tag="$(git tag --points-at HEAD 2>/dev/null | head -1)"
+            if [ -n "$git_tag" ]; then
+              tag="$git_tag"
+            else
+              cargo_version="$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')"
+              tag="v${cargo_version}"
+            fi
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+          version="${tag#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+          # Validate that the tag matches Cargo.toml when publishing.
+          cargo_version="$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')"
+          if [ "$publish" = "true" ] && [ "$version" != "$cargo_version" ]; then
+            echo "::error::Tag ${tag} (${version}) does not match Cargo.toml version (${cargo_version})" >&2
+            exit 1
+          fi
+
+          # Detect prerelease (alpha/beta/rc suffix).
+          if echo "$version" | grep -qE '-(alpha|beta|rc)'; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve signing availability
+        id: signing
+        env:
+          _APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          _APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          _APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          _KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          _APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          _APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          _APPLE_ID: ${{ vars.APPLE_ID }}
+          _ESIGNER_USERNAME: ${{ secrets.ESIGNER_USERNAME }}
+          _ESIGNER_PASSWORD: ${{ secrets.ESIGNER_PASSWORD }}
+          _ESIGNER_CREDENTIAL_ID: ${{ secrets.ESIGNER_CREDENTIAL_ID }}
+          _ESIGNER_TOTP_SECRET: ${{ secrets.ESIGNER_TOTP_SECRET }}
+        run: |
+          macos_ok=true
+          for v in \
+            "$_APPLE_CERTIFICATE" \
+            "$_APPLE_CERTIFICATE_PASSWORD" \
+            "$_APPLE_SIGNING_IDENTITY" \
+            "$_APPLE_TEAM_ID" \
+            "$_APPLE_ID" \
+            "$_APPLE_PASSWORD" \
+            "$_KEYCHAIN_PASSWORD"; do
+            [ -n "$v" ] || { macos_ok=false; break; }
+          done
+          echo "has_macos_signing=${macos_ok}" >> "$GITHUB_OUTPUT"
+
+          windows_ok=true
+          for v in \
+            "$_ESIGNER_USERNAME" \
+            "$_ESIGNER_PASSWORD" \
+            "$_ESIGNER_CREDENTIAL_ID" \
+            "$_ESIGNER_TOTP_SECRET"; do
+            [ -n "$v" ] || { windows_ok=false; break; }
+          done
+          echo "has_windows_signing=${windows_ok}" >> "$GITHUB_OUTPUT"
+
+      - name: Enforce signing prerequisites for publish
+        if: steps.metadata.outputs.publish == 'true'
+        run: |
+          if [ "${{ steps.signing.outputs.has_macos_signing }}" != "true" ]; then
+            echo "::error::macOS signing secrets are incomplete; refusing to publish an unsigned release." >&2
+            exit 1
+          fi
+          if [ "${{ steps.signing.outputs.has_windows_signing }}" != "true" ]; then
+            echo "::warning::Windows signing secrets are not configured; the Windows release will be unsigned."
+          fi
+
+  build-macos:
+    name: Build macOS artifacts
+    needs: prepare
+    runs-on: ${{ fromJSON(vars.RELEASE_MACOS_RUNNER != '' && vars.RELEASE_MACOS_RUNNER || '["macos-14"]') }}
+    timeout-minutes: 60
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      APPLE_ID: ${{ vars.APPLE_ID }}
+      APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-release-macos
+          cache-targets: true
+
+      - name: Build aarch64
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Build x86_64
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Create universal binary
+        run: |
+          mkdir -p dist/stage
+          lipo -create \
+            target/aarch64-apple-darwin/release/agent-eval \
+            target/x86_64-apple-darwin/release/agent-eval \
+            -output dist/stage/agent-eval
+
+      - name: Import Apple signing certificate
+        if: needs.prepare.outputs.has_macos_signing == 'true'
+        run: |
+          set -euo pipefail
+          keychain_path="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          Path(os.environ['RUNNER_TEMP'], 'cert.p12').write_bytes(
+              base64.b64decode(os.environ['APPLE_CERTIFICATE'])
+          )
+          PY
+
+          security import "$RUNNER_TEMP/cert.p12" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$keychain_path"
+          security list-keychain -d user -s "$keychain_path"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: -s \
+            -k "$KEYCHAIN_PASSWORD" "$keychain_path"
+
+      # Sign, notarize, verify, package, and generate checksums via the script.
+      # When signing secrets are absent (build-only run), the script is skipped
+      # and we fall through to the unsigned packaging step below.
+      - name: Sign, notarize, and package (signed)
+        if: needs.prepare.outputs.has_macos_signing == 'true'
+        run: |
+          ./scripts/sign-mac.sh \
+            --tag    "$TAG" \
+            --dist   dist/release \
+            --binary dist/stage/agent-eval
+
+      - name: Package (unsigned fallback)
+        if: needs.prepare.outputs.has_macos_signing != 'true'
+        run: |
+          mkdir -p dist/release
+          tar -czf \
+            "dist/release/agent-eval-${TAG}-macos-universal.tar.gz" \
+            -C dist/stage agent-eval
+          cd dist/release
+          shasum -a 256 "agent-eval-${TAG}-macos-universal.tar.gz" \
+            > "agent-eval-${TAG}-macos-SHA256SUMS.txt"
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-macos
+          path: dist/release/*
+          if-no-files-found: error
+
+      # Upload directly from the macOS runner so the file round-trip through
+      # Ubuntu in the publish job cannot corrupt macOS extended attributes.
+      - name: Upload macOS artifacts directly to GitHub release
+        if: needs.prepare.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          title="Agent Eval ${TAG}"
+          prerelease_flag=()
+          [ "$PRERELEASE" = "true" ] && prerelease_flag+=(--prerelease)
+
+          files=()
+          while IFS= read -r -d '' f; do
+            files+=("$f")
+          done < <(find dist/release -maxdepth 1 -type f -print0 | sort -z)
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --clobber
+          else
+            gh release create "$TAG" \
+              --target "$RELEASE_SHA" \
+              --title "$title" \
+              --generate-notes \
+              --draft \
+              "${prerelease_flag[@]}"
+            gh release upload "$TAG" "${files[@]}" --clobber
+          fi
+
+  build-linux:
+    name: Build Linux artifacts
+    needs: prepare
+    runs-on: ${{ fromJSON(vars.RELEASE_LINUX_RUNNER != '' && vars.RELEASE_LINUX_RUNNER || '["ubuntu-22.04"]') }}
+    timeout-minutes: 45
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-release-linux
+          cache-targets: true
+
+      - name: Build
+        run: cargo build --release --target x86_64-unknown-linux-gnu
+
+      - name: Package Linux tarball
+        run: |
+          mkdir -p dist/release
+          tar -czf \
+            "dist/release/agent-eval-${TAG}-linux-x86_64.tar.gz" \
+            -C target/x86_64-unknown-linux-gnu/release agent-eval
+
+      - name: Validate tarball
+        run: |
+          tar -tzf "dist/release/agent-eval-${TAG}-linux-x86_64.tar.gz" | grep -Fx 'agent-eval'
+
+      - name: Generate checksum
+        run: |
+          cd dist/release
+          sha256sum "agent-eval-${TAG}-linux-x86_64.tar.gz" \
+            > "agent-eval-${TAG}-linux-SHA256SUMS.txt"
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-linux
+          path: dist/release/*
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows artifacts
+    needs: prepare
+    runs-on: ${{ fromJSON(vars.RELEASE_WINDOWS_RUNNER != '' && vars.RELEASE_WINDOWS_RUNNER || '["windows-2022"]') }}
+    timeout-minutes: 60
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+      ESIGNER_USERNAME: ${{ secrets.ESIGNER_USERNAME }}
+      ESIGNER_PASSWORD: ${{ secrets.ESIGNER_PASSWORD }}
+      ESIGNER_CREDENTIAL_ID: ${{ secrets.ESIGNER_CREDENTIAL_ID }}
+      ESIGNER_TOTP_SECRET: ${{ secrets.ESIGNER_TOTP_SECRET }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-release-windows
+          cache-targets: true
+
+      - name: Setup Python (for eSigner signing script)
+        if: needs.prepare.outputs.has_windows_signing == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Setup Java (required by jsign)
+        if: needs.prepare.outputs.has_windows_signing == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install jsign
+        if: needs.prepare.outputs.has_windows_signing == 'true'
+        shell: pwsh
+        run: choco install jsign -y
+
+      - name: Build
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Sign Windows binary
+        if: needs.prepare.outputs.has_windows_signing == 'true'
+        shell: bash
+        run: |
+          python3 scripts/sign-windows-esigner.py \
+            target/x86_64-pc-windows-msvc/release/agent-eval.exe
+
+      - name: Package Windows zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\release | Out-Null
+          Compress-Archive `
+            -Path "target\x86_64-pc-windows-msvc\release\agent-eval.exe" `
+            -DestinationPath "dist\release\agent-eval-${env:TAG}-windows-x86_64.zip"
+
+      - name: Generate checksum
+        shell: pwsh
+        run: |
+          $file = "dist\release\agent-eval-${env:TAG}-windows-x86_64.zip"
+          $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+          "$hash  agent-eval-${env:TAG}-windows-x86_64.zip" |
+            Out-File -FilePath "dist\release\agent-eval-${env:TAG}-windows-SHA256SUMS.txt" -Encoding utf8
+
+      - name: Verify Windows signature
+        shell: pwsh
+        env:
+          REQUIRE_SIGNATURE: ${{ needs.prepare.outputs.has_windows_signing }}
+        run: |
+          $sig = Get-AuthenticodeSignature `
+            "target\x86_64-pc-windows-msvc\release\agent-eval.exe"
+          Write-Host "Signature status: $($sig.Status)"
+          if ($env:REQUIRE_SIGNATURE -eq 'true' -and $sig.Status -ne 'Valid') {
+            throw "agent-eval.exe is not validly signed: $($sig.StatusMessage)"
+          }
+
+      - name: Validate archive contents
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead(
+            "dist\release\agent-eval-${env:TAG}-windows-x86_64.zip"
+          )
+          try {
+            $entry = $zip.Entries |
+              Where-Object { $_.FullName -eq 'agent-eval.exe' } |
+              Select-Object -First 1
+            if (-not $entry) { throw "agent-eval.exe not found in archive" }
+          } finally { $zip.Dispose() }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-windows
+          path: dist/release/*
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub release
+    needs: [prepare, build-macos, build-linux, build-windows]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-assets-*
+          path: dist/release
+          merge-multiple: true
+
+      - name: Generate unified SHA256SUMS
+        run: |
+          set -euo pipefail
+          source scripts/packaging/common.sh
+          write_sha256sums dist/release "agent-eval-${TAG}-SHA256SUMS.txt"
+
+      - name: Create or update GitHub release
+        run: |
+          set -euo pipefail
+          title="Agent Eval ${TAG}"
+          prerelease_flag=()
+          [ "$PRERELEASE" = "true" ] && prerelease_flag+=(--prerelease)
+
+          # macOS files are already uploaded from the macOS runner; skip them here
+          # to avoid overwriting with the artifact round-trip copy.
+          release_files=()
+          while IFS= read -r -d '' f; do
+            case "$(basename "$f")" in
+              *-macos-*.tar.gz|*-macos-SHA256SUMS.txt)
+                echo "Skipping (already uploaded from macOS runner): $(basename "$f")"
+                continue
+                ;;
+            esac
+            release_files+=("$f")
+          done < <(find dist/release -maxdepth 1 -type f -print0 | sort -z)
+
+          [ ${#release_files[@]} -gt 0 ] || {
+            echo "::error::No release files found under dist/release" >&2
+            exit 1
+          }
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${release_files[@]}" --clobber
+            gh release edit "$TAG" --title "$title" --draft=false "${prerelease_flag[@]}"
+          else
+            gh release create "$TAG" "${release_files[@]}" \
+              --target "$RELEASE_SHA" \
+              --title "$title" \
+              --generate-notes \
+              --draft \
+              "${prerelease_flag[@]}"
+            gh release edit "$TAG" --draft=false
+          fi
+
+      - name: Write release summary
+        run: |
+          {
+            echo "## Release ${TAG}"
+            echo
+            echo "### Artifacts"
+            echo
+            ls -lh dist/release/ | awk 'NR>1 {print "- " $NF " (" $5 ")"}'
+          } >> "$GITHUB_STEP_SUMMARY"

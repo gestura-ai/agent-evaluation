@@ -1,6 +1,11 @@
 target/
 my-reports/
 
+.claude/
+.opencode/
+.codex/
+.gestura/
+
 .DS_Store
 .env
 .env.local

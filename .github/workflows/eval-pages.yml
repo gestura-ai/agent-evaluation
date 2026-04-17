@@ -1,0 +1,284 @@
+name: Eval Pages
+
+on:
+  # Deploy after every published release — same pattern as gestura-app's
+  # rustdoc-pages.yml.  The `release` event runs in the context of the tag /
+  # target-commitish directly, which the github-pages environment accepts
+  # without branch-restriction gymnastics.
+  release:
+    types: [published]
+  # Allow manual re-runs: re-evaluate after an agent update, test a specific
+  # set of families, or adjust trial / delay parameters without cutting a release.
+  workflow_dispatch:
+    inputs:
+      families:
+        description: >
+          Comma-separated agent families to evaluate.
+          Each family expands to full, sandboxed, and iterative profiles.
+        required: false
+        default: 'gestura,claude-code,opencode'
+        type: string
+      trials:
+        description: 'Number of trials per variation (scores averaged, pass/fail by majority).'
+        required: false
+        default: '3'
+        type: string
+      variation_delay_ms:
+        description: 'Milliseconds to pause between variation subprocess calls.'
+        required: false
+        default: '3000'
+        type: string
+      gestura_tag:
+        description: >
+          gestura-app release tag to install (e.g. v0.11.0).
+          Defaults to GESTURA_CLI_TAG repo variable, then v0.11.0.
+        required: false
+        default: ''
+        type: string
+      ref:
+        description: 'agent-eval ref to build from (branch, tag, or SHA). Defaults to HEAD.'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  pages: write      # required to deploy to GitHub Pages
+  id-token: write   # required by the OIDC token used by actions/deploy-pages
+
+concurrency:
+  group: eval-pages-deploy
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: stable
+  # ── Mirror the Containerfile runtime env vars ──────────────────────────────
+  # Without this, gestura subprocesses hang waiting for the macOS keychain
+  # daemon that is not available on Linux / in CI.
+  GESTURA_DISABLE_KEYCHAIN: "1"
+  # Prevent Auggie from self-updating; installed version is fixed.
+  AUGMENT_DISABLE_AUTO_UPDATE: "1"
+  # Controls where codex looks for config.toml, auth.json, and its state DB.
+  CODEX_HOME: "/home/runner/.codex"
+  RUST_LOG: "warn"
+
+jobs:
+  run-eval:
+    name: Run evaluation suite
+    # Pin to ubuntu-22.04 (Jammy) to match Debian bookworm package naming.
+    # Ubuntu 24.04 renamed libasound2 → libasound2t64; ubuntu-22.04 keeps the
+    # bookworm-compatible name that the gestura binary links against at runtime.
+    runs-on: ubuntu-22.04
+    # Full suite: 3 families × 3 modes = 9 profiles × N scenarios × 3 variations
+    # × 3 trials, with 3 s between each variation call.  Allow up to 6 hours.
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.sha }}
+
+      # ── System packages (mirrors Containerfile runtime stage) ───────────────
+      # libasound2   — ALSA runtime lib; cpal (used by gestura) links against it
+      # xz-utils     — required by npm packages (OpenCode, Auggie tarballs)
+      # curl / git   — install script and gestura subcommand dependencies
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ca-certificates \
+            curl \
+            git \
+            bash \
+            xz-utils \
+            libasound2
+
+      # ── Node.js 22 LTS via NodeSource (mirrors Containerfile exactly) ───────
+      # Auggie requires Node 22+; Claude Code and OpenCode also support it.
+      # Using the NodeSource setup script instead of actions/setup-node to match
+      # the Containerfile's exact installation path and system-wide availability.
+      - name: Install Node.js 22 via NodeSource
+        run: |
+          curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
+          sudo apt-get install -y --no-install-recommends nodejs
+          node --version
+          npm --version
+
+      # ── Agent CLIs (same npm install command as Containerfile) ──────────────
+      - name: Install agent CLIs via npm
+        run: |
+          sudo npm install -g \
+            @anthropic-ai/claude-code \
+            @augmentcode/auggie \
+            @openai/codex \
+            opencode-ai
+          claude   --version
+          auggie   --version
+          codex    --version
+          opencode --version
+
+      # ── Gestura CLI via official install script (mirrors Containerfile) ─────
+      - name: Install gestura CLI
+        env:
+          # Resolve tag: workflow input → repo variable → Containerfile default.
+          GESTURA_TAG: ${{ github.event.inputs.gestura_tag || vars.GESTURA_CLI_TAG || 'v0.11.0' }}
+        run: |
+          set -euo pipefail
+          echo "Installing gestura ${GESTURA_TAG}"
+          curl -fsSL \
+            https://raw.githubusercontent.com/gestura-ai/gestura-app/main/install/install.sh \
+            | bash -s -- --mode cli --tag "${GESTURA_TAG}" --require-verify
+          gestura --version
+
+      # ── Rust / agent-eval build ─────────────────────────────────────────────
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-eval-pages-ubuntu-22.04
+          cache-targets: true
+
+      - name: Build agent-eval
+        run: cargo build --release
+
+      # ── Codex config (mirrors entrypoint.sh) ────────────────────────────────
+      # Codex v0.120.0+ reads its API key from ~/.codex/config.toml rather than
+      # OPENAI_API_KEY alone.  Write the file here exactly as entrypoint.sh does
+      # so Codex profiles (if included in future runs) authenticate correctly.
+      - name: Configure Codex CLI
+        if: env.OPENAI_API_KEY != ''
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          mkdir -p "${CODEX_HOME}"
+          cat > "${CODEX_HOME}/config.toml" << TOML
+          forced_login_method = "api"
+          cli_auth_credentials_store = "file"
+          openai_api_key = "${OPENAI_API_KEY}"
+          TOML
+
+      # ── Resolve runtime parameters ──────────────────────────────────────────
+      - name: Resolve suite parameters
+        id: params
+        run: |
+          families="${{ github.event.inputs.families || 'gestura,claude-code,opencode' }}"
+          trials="${{ github.event.inputs.trials || '3' }}"
+          delay="${{ github.event.inputs.variation_delay_ms || '3000' }}"
+          echo "families=${families}" >> "$GITHUB_OUTPUT"
+          echo "trials=${trials}"     >> "$GITHUB_OUTPUT"
+          echo "delay=${delay}"       >> "$GITHUB_OUTPUT"
+          echo "Families : ${families}"
+          echo "Trials   : ${trials}"
+          echo "Delay ms : ${delay}"
+
+      # ── Run the full evaluation suite ───────────────────────────────────────
+      - name: Run evaluation suite
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # gestura-* profiles read the GESTURA_ prefixed key; other CLIs use the
+          # bare key.  Fall back to ANTHROPIC_API_KEY if a dedicated gestura key
+          # is not configured (they may share the same account).
+          GESTURA_ANTHROPIC_API_KEY: ${{ secrets.GESTURA_ANTHROPIC_API_KEY || secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p eval-results
+          ./target/release/agent-eval suite \
+            --families "${{ steps.params.outputs.families }}" \
+            --format all \
+            --output-dir eval-results \
+            --trials     "${{ steps.params.outputs.trials }}" \
+            --variation-delay-ms "${{ steps.params.outputs.delay }}"
+
+      # ── Prepare GitHub Pages artifact ───────────────────────────────────────
+      - name: Prepare Pages artifact
+        run: |
+          set -euo pipefail
+          # Suppress Jekyll processing — the HTML is already rendered.
+          touch eval-results/.nojekyll
+
+          # Promote the comparison / main HTML to index.html so Pages serves it
+          # as the landing page.
+          if [ ! -f eval-results/index.html ]; then
+            html_file="$(find eval-results -maxdepth 1 -name '*.html' | sort | head -1)"
+            if [ -n "$html_file" ]; then
+              cp "$html_file" eval-results/index.html
+              echo "Promoted ${html_file} → eval-results/index.html"
+            else
+              # Fallback: generate a minimal listing page.
+              python3 - <<'PY'
+          from pathlib import Path
+
+          out = Path("eval-results")
+          files = sorted(
+              f.name for f in out.iterdir()
+              if f.is_file() and f.suffix in (".json", ".html") and f.name != "index.html"
+          )
+          rows = "\n".join(f'<li><a href="./{f}">{f}</a></li>' for f in files)
+
+          (out / "index.html").write_text(
+              f"""<!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1" />
+              <title>Agent Evaluation Results</title>
+              <style>
+                :root {{ color-scheme: light dark; }}
+                body {{
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                  margin: 2rem auto; max-width: 52rem; line-height: 1.6; padding: 0 1rem;
+                }}
+              </style>
+            </head>
+            <body>
+              <h1>Agent Evaluation Results</h1>
+              <ul>{rows}</ul>
+            </body>
+          </html>""",
+              encoding="utf-8",
+          )
+          PY
+            fi
+          fi
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## Eval Pages artifact"
+            echo
+            echo "| Parameter | Value |"
+            echo "|-----------|-------|"
+            echo "| Families  | \`${{ steps.params.outputs.families }}\` |"
+            echo "| Trials    | \`${{ steps.params.outputs.trials }}\` |"
+            echo "| Delay ms  | \`${{ steps.params.outputs.delay }}\` |"
+            echo
+            echo "### Generated files"
+            echo
+            find eval-results -maxdepth 1 -type f | sort | \
+              sed 's|^eval-results/||' | awk '{print "- `" $0 "`"}'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: eval-results
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: run-eval
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

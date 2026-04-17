@@ -1,0 +1,50 @@
+name: Feature Request
+description: Suggest a new scenario, agent profile, or harness capability
+title: "[Feature]: "
+labels: ["enhancement"]
+
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - New evaluation scenario
+        - New agent profile
+        - Evaluation rules / rubric
+        - Report / output format
+        - CLI interface
+        - CI / release pipeline
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      placeholder: What gap or limitation does this address?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      placeholder: What should the feature do and how should it work?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+    validations:
+      required: false
