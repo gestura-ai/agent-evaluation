@@ -1244,11 +1244,7 @@ fn build_variation_matrix(report: &ComparisonReport) -> String {
             }
         }
 
-        let pct = if total > 0 {
-            pass_count * 100 / total
-        } else {
-            0
-        };
+        let pct = (pass_count * 100).checked_div(total).unwrap_or(0);
         let bg = score_bg_css(pct as f32 / 100.0, false);
         html.push_str(&format!(
             "<td style='background:{bg};font-weight:700'>{pct}%</td>"

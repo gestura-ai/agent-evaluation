@@ -1,8 +1,7 @@
 [advisories]
-# Treat unmaintained crates as informational rather than errors — many
-# transitive deps are unmaintained but still safe for our threat model.
-unmaintained = "warn"
-unsound = "warn"
+# Treat unmaintained and unsound crates as warnings rather than errors.
+# Many transitive deps are unmaintained but still safe for our threat model.
+informational_warnings = ["unmaintained", "unsound"]
 
 # Add per-advisory ignores here when a known-safe advisory affects a
 # transitive dependency we cannot update immediately.
