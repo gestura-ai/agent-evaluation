@@ -53,23 +53,6 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_VERSION: stable
-  # ── Mirror the Containerfile runtime env vars ──────────────────────────────
-  # Without this, gestura subprocesses hang waiting for the macOS keychain
-  # daemon that is not available on Linux / in CI.
-  GESTURA_DISABLE_KEYCHAIN: "1"
-  # Prevent Auggie from self-updating; installed version is fixed.
-  AUGMENT_DISABLE_AUTO_UPDATE: "1"
-  # Controls where codex looks for config.toml, auth.json, and its state DB.
-  CODEX_HOME: "/home/runner/.codex"
-  RUST_LOG: "warn"
-  # ── API keys — job-level so every step and all spawned subprocesses inherit ─
-  # These must be defined here (not only at step level) to be visible to the
-  # agent CLI subprocesses that agent-eval spawns, and to the codex config step.
-  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-  # gestura-* profiles read GESTURA_ANTHROPIC_API_KEY; fall back to the shared
-  # Anthropic key if a dedicated gestura secret is not configured.
-  GESTURA_ANTHROPIC_API_KEY: ${{ secrets.GESTURA_ANTHROPIC_API_KEY || secrets.ANTHROPIC_API_KEY }}
-  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
 jobs:
   run-eval:
@@ -81,6 +64,17 @@ jobs:
     # Full suite: 3 families × 3 modes = 9 profiles × N scenarios × 3 variations
     # × 3 trials, with 3 s between each variation call.  Allow up to 6 hours.
     timeout-minutes: 360
+    env:
+      # ── Mirror the Containerfile runtime env vars ────────────────────────────
+      GESTURA_DISABLE_KEYCHAIN: "1"
+      AUGMENT_DISABLE_AUTO_UPDATE: "1"
+      CODEX_HOME: "/home/runner/.codex"
+      RUST_LOG: "warn"
+      # ── API keys — secrets are only accessible at job/step level, not
+      # workflow level. Defined here so every step and subprocess inherits them.
+      GESTURA_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
     steps:
       - name: Checkout
