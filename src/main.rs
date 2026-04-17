@@ -341,29 +341,66 @@ fn run_single_agent(args: Cli, suite: EvalScenarioSuite) {
         std::process::exit(1);
     }
 
-    // Single-agent progress: only needed to surface rate-limit retry messages.
-    // Everything else is printed by print_text() after the run finishes.
-    let single_agent_progress: ProgressCallback = Arc::new(|event| {
-        if let ProgressEvent::RateLimitRetry {
-            scenario_id,
-            variation_id,
-            attempt,
-            max_attempts,
-            wait_secs,
-            ..
-        } = event
-        {
-            eprintln!(
-                "{} {}/{} rate-limited (429) — waiting {}s  [retry {}/{}]",
-                "⏸".yellow(),
+    // Single-agent progress: emits one line per variation to stderr so CI logs
+    // show a steady stream of completions. Skipped in --quiet / --json modes.
+    let quiet_mode = args.quiet || args.json;
+    let single_agent_progress: ProgressCallback = {
+        let done = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let total = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        Arc::new(move |event| match event {
+            ProgressEvent::ProfileStarted {
+                total_variations, ..
+            } => {
+                total.store(total_variations, std::sync::atomic::Ordering::Relaxed);
+                if !quiet_mode {
+                    eprintln!("  Running {} variation(s)...", total_variations);
+                }
+            }
+            ProgressEvent::VariationDone {
                 scenario_id,
                 variation_id,
-                wait_secs,
+                passed,
+                score,
+                duration_ms,
+                ..
+            } => {
+                let n = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                let t = total.load(std::sync::atomic::Ordering::Relaxed);
+                if !quiet_mode {
+                    let icon = if passed { "✓".green() } else { "✗".red() };
+                    eprintln!(
+                        "  {} [{}/{}] {}/{} {:>5.1}% ({:.1}s)",
+                        icon,
+                        n,
+                        t,
+                        scenario_id,
+                        variation_id,
+                        score * 100.0,
+                        duration_ms as f64 / 1000.0,
+                    );
+                }
+            }
+            ProgressEvent::RateLimitRetry {
+                scenario_id,
+                variation_id,
                 attempt,
-                max_attempts - 1,
-            );
-        }
-    });
+                max_attempts,
+                wait_secs,
+                ..
+            } => {
+                eprintln!(
+                    "  {} {}/{} rate-limited (429) — waiting {}s  [retry {}/{}]",
+                    "⏸".yellow(),
+                    scenario_id,
+                    variation_id,
+                    wait_secs,
+                    attempt,
+                    max_attempts - 1,
+                );
+            }
+            _ => {}
+        })
+    };
 
     let opts = CliRunnerOptions {
         eval_config: eval_config.clone(),
