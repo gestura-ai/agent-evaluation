@@ -39,5 +39,25 @@ openai_api_key = "${OPENAI_API_KEY}"
 TOML
 fi
 
+# ── Gestura: write ~/.gestura/config.yaml from env vars ──────────────────────
+# gestura v0.11.0 has a bug: GESTURA_DISABLE_KEYCHAIN=1 disables both keychain
+# AND plaintext config writes via `gestura config set`, and the env-var fallback
+# path (ANTHROPIC_API_KEY / GESTURA_ANTHROPIC_API_KEY) is reported by `gestura
+# health` but never actually wired into the HTTP client in exec mode.
+# Fix: write the config.yaml directly, same approach as the Codex block above.
+# Prefer GESTURA_ANTHROPIC_API_KEY (gestura-specific key) with fallback to
+# ANTHROPIC_API_KEY (shared key used by claude-code and opencode profiles).
+_gestura_key="${GESTURA_ANTHROPIC_API_KEY:-${ANTHROPIC_API_KEY:-}}"
+if [[ -n "${_gestura_key}" ]]; then
+    mkdir -p "${HOME}/.gestura"
+    cat > "${HOME}/.gestura/config.yaml" << YAML
+llm:
+  primary: anthropic
+  anthropic:
+    api_key: "${_gestura_key}"
+YAML
+fi
+unset _gestura_key
+
 exec agent-eval "$@"
 

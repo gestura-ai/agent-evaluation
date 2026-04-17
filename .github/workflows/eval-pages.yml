@@ -163,7 +163,13 @@ jobs:
       - name: Smoke-test gestura authentication
         run: |
           set -euo pipefail
-          echo "Testing gestura auth (GESTURA_ANTHROPIC_API_KEY length: ${#GESTURA_ANTHROPIC_API_KEY})"
+          # gestura v0.11.0 bug: env vars are shown by `health` but not wired into
+          # the HTTP client for exec. Write config.yaml directly (same fix as entrypoint.sh).
+          _key="${GESTURA_ANTHROPIC_API_KEY:-${ANTHROPIC_API_KEY:-}}"
+          echo "Testing gestura auth (key length: ${#_key})"
+          mkdir -p "${HOME}/.gestura"
+          printf 'llm:\n  primary: anthropic\n  anthropic:\n    api_key: "%s"\n' "${_key}" \
+            > "${HOME}/.gestura/config.yaml"
           gestura exec "Reply with only the single word: OK"
 
       # ── Rust / agent-eval build ─────────────────────────────────────────────
