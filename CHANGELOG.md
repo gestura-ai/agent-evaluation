@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## UnReleased
 
+fix: replace pgrep-recursive tree kill with single-pass /proc scan
+
+The previous kill_process_tree spawned one pgrep subprocess per process
+
+level (n pgrep calls + n kill calls for a depth-n tree). On busy CI
+
+runners this was slow and had PID-reuse races between pgrep and kill,
+
+causing new hangs at s2_multi_turn that weren't present before.
+
+New approach:
+
+Read /proc once to build a PPID→children map (no subprocess spawning)
+
+BFS from root_pid to collect all descendants in one pass
+
+Send a single kill -9 <pid1> <pid2> ... for all collected PIDs
+
+Also remove the tree kill from the Ok path (main process exited normally):
+
+when the process exits its children are already reparented to init so the
+
+/proc scan finds nothing useful under child_pid. recv_timeout(10 s) is
+
+the correct and sufficient guard for the orphaned-pipe case.
+
+Tree kill is now called only in the timeout path where it is needed:
+
+kill -9 -{pgid} — fast sweep of the original process group
+
+## [0.2.8] - 2026-04-18
+
 ### Added
 
 - `kill_process_tree` added to `ChildProcess` trait and `handle_timeout`
