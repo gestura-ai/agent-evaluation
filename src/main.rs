@@ -918,12 +918,12 @@ fn handle_progress_event(st: &mut ProgressState, event: ProgressEvent) {
             trial,
             total_trials,
         } => {
-            if total_trials > 1 {
-                if let Some(pb) = st.bars.get(&agent_id) {
-                    pb.set_message(format!(
-                        "{scenario_id}/{variation_id} t{trial}/{total_trials}"
-                    ));
-                }
+            if total_trials > 1
+                && let Some(pb) = st.bars.get(&agent_id)
+            {
+                pb.set_message(format!(
+                    "{scenario_id}/{variation_id} t{trial}/{total_trials}"
+                ));
             }
         }
 
