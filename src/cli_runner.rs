@@ -468,17 +468,7 @@ impl CliEvalRunner {
         });
 
         let exit_status = match exit_rx.recv_timeout(timeout) {
-            Ok(res) => {
-                // Main process exited on its own.  Kill any surviving descendants
-                // that may be holding the stdout/stderr pipe write-ends open.
-                // These are processes that called setsid()/setpgid() to escape the
-                // original process group and were therefore not caught by the group
-                // kill.  Killing them now lets the reader threads finish quickly so
-                // recv_timeout below returns real data instead of timing out empty.
-                #[cfg(unix)]
-                kill_process_tree(child_pid);
-                res
-            }
+            Ok(res) => res,
             Err(_elapsed) => {
                 // Timeout: kill the process group first (fast, catches most children),
                 // then walk the full descendant tree to catch processes that changed
@@ -608,27 +598,75 @@ fn build_prompt(variation: &EvalVariation) -> String {
     buf
 }
 
-/// Kill a process and all of its descendants by recursively walking the
-/// parent-child tree via `pgrep -P`.
+/// Kill a process and every one of its descendants.
 ///
-/// Kills depth-first (children before parent) to avoid reparenting races.
-/// This catches processes that called `setsid()`/`setpgid()` to escape the
-/// original process group, which a plain `kill -PGID` cannot reach.
-/// Non-fatal: errors from pgrep or kill are silently ignored.
+/// Reads `/proc` once to build the full parent→child map, then does a BFS
+/// from `root_pid` to collect all descendant PIDs.  All collected PIDs are
+/// sent to a single `kill -9` invocation so no subprocess is spawned per
+/// process (unlike the previous pgrep-recursive approach, which was slow and
+/// prone to PID-reuse races on busy systems).
+///
+/// This catches processes that called `setsid()`/`setpgid()` because we walk
+/// by PPID (which the process cannot change) rather than by PGID.
+///
+/// Non-fatal: any I/O or kill errors are silently ignored.
 #[cfg(unix)]
-fn kill_process_tree(pid: u32) {
-    // Find direct children.
-    if let Ok(out) = Command::new("pgrep")
-        .args(["-P", &pid.to_string()])
-        .output()
-    {
-        for child_str in String::from_utf8_lossy(&out.stdout).split_whitespace() {
-            if let Ok(child_pid) = child_str.parse::<u32>() {
-                kill_process_tree(child_pid);
+fn kill_process_tree(root_pid: u32) {
+    use std::collections::{HashMap, VecDeque};
+
+    // Build PPID → [child PID] map from /proc in a single pass.
+    let mut children_of: HashMap<u32, Vec<u32>> = HashMap::new();
+    if let Ok(entries) = std::fs::read_dir("/proc") {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let pid = match entry
+                .file_name()
+                .to_str()
+                .and_then(|s| s.parse::<u32>().ok())
+            {
+                Some(p) => p,
+                None => continue,
+            };
+            if let Some(ppid) = proc_ppid(pid) {
+                children_of.entry(ppid).or_default().push(pid);
             }
         }
     }
-    let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
+
+    // BFS from root_pid to collect root + all descendants.
+    let mut to_kill: Vec<u32> = Vec::new();
+    let mut queue: VecDeque<u32> = VecDeque::new();
+    queue.push_back(root_pid);
+    while let Some(pid) = queue.pop_front() {
+        to_kill.push(pid);
+        if let Some(children) = children_of.get(&pid) {
+            for &child in children {
+                queue.push_back(child);
+            }
+        }
+    }
+
+    if to_kill.is_empty() {
+        return;
+    }
+
+    // Single kill(1) call for all PIDs — minimises subprocess overhead.
+    let mut args = vec!["-9".to_string()];
+    args.extend(to_kill.iter().map(|p| p.to_string()));
+    let _ = Command::new("kill").args(&args).status();
+}
+
+/// Read the PPid field from `/proc/{pid}/status`.  Returns `None` on any
+/// error (process already gone, non-numeric entry, permission denied, etc.).
+#[cfg(unix)]
+fn proc_ppid(pid: u32) -> Option<u32> {
+    std::fs::read_to_string(format!("/proc/{pid}/status"))
+        .ok()?
+        .lines()
+        .find(|l| l.starts_with("PPid:"))?
+        .split_whitespace()
+        .nth(1)?
+        .parse()
+        .ok()
 }
 
 /// Returns `true` when the subprocess exited non-zero but produced no output
