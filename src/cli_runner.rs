@@ -468,21 +468,27 @@ impl CliEvalRunner {
         });
 
         let exit_status = match exit_rx.recv_timeout(timeout) {
-            Ok(res) => res,
+            Ok(res) => {
+                // Main process exited on its own.  Kill any surviving descendants
+                // that may be holding the stdout/stderr pipe write-ends open.
+                // These are processes that called setsid()/setpgid() to escape the
+                // original process group and were therefore not caught by the group
+                // kill.  Killing them now lets the reader threads finish quickly so
+                // recv_timeout below returns real data instead of timing out empty.
+                #[cfg(unix)]
+                kill_process_tree(child_pid);
+                res
+            }
             Err(_elapsed) => {
-                // Kill the whole process group (covers grandchildren in the same group).
+                // Timeout: kill the process group first (fast, catches most children),
+                // then walk the full descendant tree to catch processes that changed
+                // their process group via setsid()/setpgid().
                 #[cfg(unix)]
                 {
                     let _ = Command::new("kill")
                         .args(["-9", &format!("-{child_pid}")])
                         .status();
-                    // Second sweep: kill direct children that called setsid/setpgid to
-                    // escape the group.  Agentic CLIs (opencode, claude-code) spawn
-                    // subprocesses for code execution; those may detach from the group
-                    // and keep the stdout pipe open, blocking the reader thread forever.
-                    let _ = Command::new("pkill")
-                        .args(["-9", "-P", &child_pid.to_string()])
-                        .status();
+                    kill_process_tree(child_pid);
                 }
                 #[cfg(not(unix))]
                 {
@@ -504,11 +510,9 @@ impl CliEvalRunner {
             }
         };
 
-        // Drain stdout/stderr with a hard deadline.  If a grandchild inherited the
-        // pipe write-end and changed its process group (escaping our kill sweeps),
-        // recv() would block forever even though the main process has already exited.
-        // 10 s is generous for normal pipe drain; anything slower means a stuck
-        // grandchild — log it and move on so the eval doesn't hang indefinitely.
+        // Drain stdout/stderr with a hard deadline.  Even after killing descendants
+        // above, the reader threads may still be in the middle of reading buffered
+        // data.  10 s is ample for any remaining pipe bytes to flush.
         let io_drain = Duration::from_secs(10);
 
         let raw_stdout_bytes = match stdout_rx.recv_timeout(io_drain) {
@@ -602,6 +606,29 @@ fn build_prompt(variation: &EvalVariation) -> String {
     }
     buf.push_str(&format!("User: {}", variation.prompt));
     buf
+}
+
+/// Kill a process and all of its descendants by recursively walking the
+/// parent-child tree via `pgrep -P`.
+///
+/// Kills depth-first (children before parent) to avoid reparenting races.
+/// This catches processes that called `setsid()`/`setpgid()` to escape the
+/// original process group, which a plain `kill -PGID` cannot reach.
+/// Non-fatal: errors from pgrep or kill are silently ignored.
+#[cfg(unix)]
+fn kill_process_tree(pid: u32) {
+    // Find direct children.
+    if let Ok(out) = Command::new("pgrep")
+        .args(["-P", &pid.to_string()])
+        .output()
+    {
+        for child_str in String::from_utf8_lossy(&out.stdout).split_whitespace() {
+            if let Ok(child_pid) = child_str.parse::<u32>() {
+                kill_process_tree(child_pid);
+            }
+        }
+    }
+    let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
 }
 
 /// Returns `true` when the subprocess exited non-zero but produced no output
