@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- display pipeline errors in evaluation logs and improve child process cleanup on timeout
+
+## [0.2.4] - 2026-04-18
+
+### Added
+
 - Fix agent elapse time metric recording
 - resolve agents from crashing in pipeline for automated eval
 
