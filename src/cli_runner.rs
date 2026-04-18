@@ -470,15 +470,22 @@ impl CliEvalRunner {
         let exit_status = match exit_rx.recv_timeout(timeout) {
             Ok(res) => res,
             Err(_elapsed) => {
-                // Timeout: kill the process group first (fast, catches most children),
-                // then walk the full descendant tree to catch processes that changed
-                // their process group via setsid()/setpgid().
+                // Timeout: kill the process group immediately (fast, catches all
+                // processes that share the original PGID = child_pid).
                 #[cfg(unix)]
                 {
                     let _ = Command::new("kill")
                         .args(["-9", &format!("-{child_pid}")])
                         .status();
-                    kill_process_tree(child_pid);
+                    // Walk the full descendant tree in a background thread so
+                    // that /proc reads cannot block the main evaluation thread.
+                    // On Linux, reading /proc/{pid}/status for a process that is
+                    // in D-state (uninterruptible kernel sleep — e.g. cargo
+                    // waiting on a slow crates.io download) can block
+                    // indefinitely.  Fire-and-forget: the group kill above
+                    // already handles the common case; the tree walk mops up
+                    // any stragglers that changed their process group.
+                    thread::spawn(move || kill_process_tree(child_pid));
                 }
                 #[cfg(not(unix))]
                 {
