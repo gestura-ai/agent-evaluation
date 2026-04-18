@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## UnReleased
 
+### Changed
+
+- thread-safe pgrep-recursive tree kill implementation
+
+## [0.2.9] - 2026-04-18
+
 fix: replace pgrep-recursive tree kill with single-pass /proc scan
 
 The previous kill_process_tree spawned one pgrep subprocess per process
