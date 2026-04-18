@@ -283,8 +283,9 @@ impl CliEvalRunner {
         let cfg = &self.options.eval_config;
         let max_attempts = 1 + cfg.execution.retries as usize;
 
-        // Wall-clock start: covers all retry attempts + backoff waits.
-        let start = Instant::now();
+        // Timer is reset at the start of each attempt so backoff sleeps are
+        // excluded — duration_ms reflects only the agent's actual execution time.
+        let mut start = Instant::now();
 
         let (response_text, pipeline_error) = if self.options.dry_run {
             (
@@ -299,6 +300,7 @@ impl CliEvalRunner {
             let mut attempt = 0usize;
             loop {
                 attempt += 1;
+                start = Instant::now(); // reset: only the successful attempt's time counts
                 let (text, err) = self.invoke_agent(scenario, variation);
 
                 // Three rate-limit detection paths:
