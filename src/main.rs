@@ -845,7 +845,13 @@ fn plain_progress_event(counts: &Mutex<HashMap<String, (usize, usize)>>, event: 
                 };
                 eprintln!(
                     "  … [{}] [{:>2}/{}] {}/{} trial {}/{}",
-                    agent_id, done + 1, total, scenario_id, variation_id, trial, total_trials,
+                    agent_id,
+                    done + 1,
+                    total,
+                    scenario_id,
+                    variation_id,
+                    trial,
+                    total_trials,
                 );
             }
         }
