@@ -46,6 +46,9 @@ pub enum ProgressEvent {
         score: f32,
         /// Wall-clock time for the subprocess call.
         duration_ms: u64,
+        /// Error from the representative trial, if any (e.g. "timeout after 120s").
+        /// Present on failures; `None` on clean success.
+        pipeline_error: Option<String>,
     },
 
     /// A variation hit a rate-limit error and is pausing before a retry.

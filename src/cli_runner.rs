@@ -273,6 +273,7 @@ impl CliEvalRunner {
                 passed: result.passed,
                 score: result.score,
                 duration_ms: result.duration_ms,
+                pipeline_error: result.pipeline_error.clone(),
             });
         }
 
@@ -469,12 +470,18 @@ impl CliEvalRunner {
         let exit_status = match exit_rx.recv_timeout(timeout) {
             Ok(res) => res,
             Err(_elapsed) => {
-                // Kill the whole process group (covers grandchildren such as opencode's
-                // .opencode child that may hold the stalled connection).
+                // Kill the whole process group (covers grandchildren in the same group).
                 #[cfg(unix)]
                 {
                     let _ = Command::new("kill")
                         .args(["-9", &format!("-{child_pid}")])
+                        .status();
+                    // Second sweep: kill direct children that called setsid/setpgid to
+                    // escape the group.  Agentic CLIs (opencode, claude-code) spawn
+                    // subprocesses for code execution; those may detach from the group
+                    // and keep the stdout pipe open, blocking the reader thread forever.
+                    let _ = Command::new("pkill")
+                        .args(["-9", "-P", &child_pid.to_string()])
                         .status();
                 }
                 #[cfg(not(unix))]

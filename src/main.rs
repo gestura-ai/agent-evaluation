@@ -391,14 +391,19 @@ fn run_single_agent(args: Cli, suite: EvalScenarioSuite) {
                 passed,
                 score,
                 duration_ms,
+                pipeline_error,
                 ..
             } => {
                 let n = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                 let t = total.load(std::sync::atomic::Ordering::Relaxed);
                 if !quiet_mode {
                     let icon = if passed { "✓".green() } else { "✗".red() };
+                    let err_suffix = match &pipeline_error {
+                        Some(e) if !passed => format!("  [{}]", e),
+                        _ => String::new(),
+                    };
                     eprintln!(
-                        "  {} [{}/{}] {}/{} {:>5.1}% ({:.1}s)",
+                        "  {} [{}/{}] {}/{} {:>5.1}% ({:.1}s){}",
                         icon,
                         n,
                         t,
@@ -406,6 +411,7 @@ fn run_single_agent(args: Cli, suite: EvalScenarioSuite) {
                         variation_id,
                         score * 100.0,
                         duration_ms as f64 / 1000.0,
+                        err_suffix,
                     );
                 }
             }
@@ -671,7 +677,6 @@ fn run_suite(args: SuiteArgs) {
             }
         }
     }
-
 }
 
 // ─── `report` subcommand ──────────────────────────────────────────────────────
@@ -802,6 +807,7 @@ fn plain_progress_event(counts: &Mutex<HashMap<String, (usize, usize)>>, event: 
             passed,
             score,
             duration_ms,
+            pipeline_error,
         } => {
             let (done, total) = {
                 let mut map = counts.lock().unwrap();
@@ -810,8 +816,12 @@ fn plain_progress_event(counts: &Mutex<HashMap<String, (usize, usize)>>, event: 
                 (e.0, e.1)
             };
             let icon = if passed { "✓" } else { "✗" };
+            let err_suffix = match &pipeline_error {
+                Some(e) if !passed => format!("  [{}]", e),
+                _ => String::new(),
+            };
             eprintln!(
-                "  {} [{}] [{:>2}/{}] {}/{} {:>5.1}% ({:.1}s)",
+                "  {} [{}] [{:>2}/{}] {}/{} {:>5.1}% ({:.1}s){}",
                 icon,
                 agent_id,
                 done,
@@ -820,6 +830,7 @@ fn plain_progress_event(counts: &Mutex<HashMap<String, (usize, usize)>>, event: 
                 variation_id,
                 score * 100.0,
                 duration_ms as f64 / 1000.0,
+                err_suffix,
             );
         }
 
@@ -930,17 +941,23 @@ fn handle_progress_event(st: &mut ProgressState, event: ProgressEvent) {
             passed,
             score,
             duration_ms,
+            pipeline_error,
         } => {
             if let Some(pb) = st.bars.get(&agent_id) {
                 if !st.quiet {
                     let icon = if passed { "✓".green() } else { "✗".red() };
+                    let err_suffix = match &pipeline_error {
+                        Some(e) if !passed => format!("  [{}]", e),
+                        _ => String::new(),
+                    };
                     let msg = format!(
-                        "    {} {:<20}/{:<3}  {:>5.1}%  {:.1}s",
+                        "    {} {:<20}/{:<3}  {:>5.1}%  {:.1}s{}",
                         icon,
                         scenario_id,
                         variation_id,
                         score * 100.0,
                         duration_ms as f64 / 1000.0,
+                        err_suffix,
                     );
                     st.mp.suspend(|| eprintln!("{msg}"));
                 }
