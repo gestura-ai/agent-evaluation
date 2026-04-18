@@ -195,12 +195,16 @@ jobs:
       # Node.js CLIs (claude, opencode) have higher per-invocation memory
       # overhead than native binaries.  6 GB of swap prevents the OOM killer
       # from terminating the runner mid-suite.
+      # ── Swap space — GitHub ubuntu-22.04 runners have 7 GB RAM with no swap.
+      # /swapfile is already in use by the runner image (fallocate fails with
+      # "Text file busy"); use /mnt/swapfile instead — /mnt is the large
+      # ephemeral data disk on Azure-hosted runners (~14 GB free).
       - name: Add swap space
         run: |
-          sudo fallocate -l 6G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          sudo fallocate -l 6G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
           echo "Memory + swap:"
           free -h
 
