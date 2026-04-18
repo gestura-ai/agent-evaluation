@@ -34,7 +34,7 @@ on:
       gestura_tag:
         description: >
           gestura-app release tag to install (e.g. v0.11.0).
-          Defaults to GESTURA_CLI_TAG repo variable, then v0.11.0.
+          Defaults to GESTURA_CLI_TAG repo variable, then v0.11.2.
         required: false
         default: ''
         type: string
@@ -60,18 +60,58 @@ env:
   RUST_VERSION: stable
 
 jobs:
+  # ── Resolve parameters and build the family matrix ────────────────────────────
+  # Runs first so all downstream jobs share the same resolved values.
+  setup:
+    name: Resolve parameters
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+      trials: ${{ steps.resolve.outputs.trials }}
+      delay: ${{ steps.resolve.outputs.delay }}
+      gestura_tag: ${{ steps.resolve.outputs.gestura_tag }}
+      ref: ${{ steps.resolve.outputs.ref }}
+    steps:
+      - name: Resolve suite parameters
+        id: resolve
+        run: |
+          families="${{ github.event.inputs.families || 'gestura,claude-code,opencode' }}"
+          trials="${{ github.event.inputs.trials || '3' }}"
+          delay="${{ github.event.inputs.variation_delay_ms || '3000' }}"
+          gestura_tag="${{ github.event.client_payload.tag || github.event.inputs.gestura_tag || vars.GESTURA_CLI_TAG || 'v0.11.2' }}"
+          ref="${{ github.event.inputs.ref || github.sha }}"
+
+          # Convert comma-separated families into a JSON array for the matrix strategy.
+          matrix=$(echo "$families" | tr ',' '\n' | jq -R . | jq -sc '{"family": .}')
+
+          echo "matrix=${matrix}"           >> "$GITHUB_OUTPUT"
+          echo "trials=${trials}"           >> "$GITHUB_OUTPUT"
+          echo "delay=${delay}"             >> "$GITHUB_OUTPUT"
+          echo "gestura_tag=${gestura_tag}" >> "$GITHUB_OUTPUT"
+          echo "ref=${ref}"                 >> "$GITHUB_OUTPUT"
+
+          echo "Trigger      : ${{ github.event_name }}"
+          echo "Families     : ${families}"
+          echo "Matrix       : ${matrix}"
+          echo "Trials       : ${trials}"
+          echo "Delay ms     : ${delay}"
+          echo "Gestura tag  : ${gestura_tag}"
+          echo "Ref          : ${ref}"
+
+  # ── Per-family evaluation — runs in parallel, one job per family ──────────────
+  # One family: 3 modes × 14 scenarios × 3 variations × 3 trials ≈ 40–90 min.
+  # 150-min timeout gives a comfortable margin; families run concurrently so
+  # total wall-clock time matches the slowest family (~40–90 min) rather than
+  # the sum (~2.5–3.5 h) that caused the "runner lost communication" crash.
   run-eval:
-    name: Run evaluation suite
-    # Pin to ubuntu-22.04 (Jammy) to match Debian bookworm package naming.
-    # Ubuntu 24.04 renamed libasound2 → libasound2t64; ubuntu-22.04 keeps the
-    # bookworm-compatible name that the gestura binary links against at runtime.
+    name: Evaluate ${{ matrix.family }}
+    needs: setup
     runs-on: ubuntu-22.04
-    # Full suite: 3 families × 3 modes = 9 profiles × N scenarios × 3 variations
-    # × 3 trials, with 3 s between each variation call.  Allow up to ~6 hours.
-    # 350 min leaves a 10-minute buffer before GitHub's 360-min hard kill for
-    # hosted runners — gives the harness time to flush partial results cleanly
-    # instead of being force-terminated with no output.
-    timeout-minutes: 350
+    timeout-minutes: 150
+    strategy:
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+      # Don't abort other families if one fails — partial results are still useful.
+      fail-fast: false
     env:
       # ── Mirror the Containerfile runtime env vars ────────────────────────────
       GESTURA_DISABLE_KEYCHAIN: "1"
@@ -105,7 +145,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.ref || github.sha }}
+          ref: ${{ needs.setup.outputs.ref }}
 
       # ── System packages (mirrors Containerfile runtime stage) ───────────────
       # libasound2   — ALSA runtime lib; cpal (used by gestura) links against it
@@ -124,8 +164,6 @@ jobs:
 
       # ── Node.js 22 LTS via NodeSource (mirrors Containerfile exactly) ───────
       # Auggie requires Node 22+; Claude Code and OpenCode also support it.
-      # Using the NodeSource setup script instead of actions/setup-node to match
-      # the Containerfile's exact installation path and system-wide availability.
       - name: Install Node.js 22 via NodeSource
         run: |
           curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
@@ -149,21 +187,10 @@ jobs:
       # ── Gestura CLI via official install script (mirrors Containerfile) ─────
       - name: Install gestura CLI
         env:
-          # Resolve tag: cross-repo dispatch → workflow input → repo variable → hardcoded default.
-          GESTURA_TAG: >-
-            ${{
-              github.event.client_payload.tag ||
-              github.event.inputs.gestura_tag ||
-              vars.GESTURA_CLI_TAG ||
-              'v0.11.2'
-            }}
+          GESTURA_TAG: ${{ needs.setup.outputs.gestura_tag }}
         run: |
           set -euo pipefail
           echo "Installing gestura ${GESTURA_TAG}"
-          # Run as root (via sudo) so the install script writes to /usr/local/bin,
-          # matching the Containerfile which also runs the install as root.
-          # Without sudo, the script falls back to ~/.local/bin which may not be
-          # on PATH for subsequent steps.
           curl -fsSL \
             https://raw.githubusercontent.com/gestura-ai/gestura-app/main/install/install.sh \
             | sudo bash -s -- --mode cli --tag "${GESTURA_TAG}" --require-verify
@@ -171,14 +198,9 @@ jobs:
           gestura --version
 
       # ── Smoke-test gestura authentication directly ──────────────────────────
-      # Run gestura outside of agent-eval to confirm the API key reaches it.
-      # If this fails with 401, the secret value is wrong or missing.
-      # If this passes but agent-eval later fails, the issue is in invocation.
       - name: Smoke-test gestura authentication
         run: |
           set -euo pipefail
-          # gestura v0.11.0 bug: env vars are shown by `health` but not wired into
-          # the HTTP client for exec. Write config.yaml directly (same fix as entrypoint.sh).
           _key="${GESTURA_ANTHROPIC_API_KEY:-${ANTHROPIC_API_KEY:-}}"
           echo "Testing gestura auth (key length: ${#_key})"
           mkdir -p "${HOME}/.gestura"
@@ -201,55 +223,90 @@ jobs:
       - name: Build agent-eval
         run: cargo build --release
 
-      # ── Resolve runtime parameters ──────────────────────────────────────────
-      - name: Resolve suite parameters
-        id: params
-        run: |
-          families="${{ github.event.inputs.families || 'gestura,claude-code,opencode' }}"
-          trials="${{ github.event.inputs.trials || '3' }}"
-          delay="${{ github.event.inputs.variation_delay_ms || '3000' }}"
-          echo "families=${families}" >> "$GITHUB_OUTPUT"
-          echo "trials=${trials}"     >> "$GITHUB_OUTPUT"
-          echo "delay=${delay}"       >> "$GITHUB_OUTPUT"
-          echo "Families : ${families}"
-          echo "Trials   : ${trials}"
-          echo "Delay ms : ${delay}"
-
-      # ── Run the full evaluation suite ───────────────────────────────────────
+      # ── Run this family's evaluation ─────────────────────────────────────────
       - name: Run evaluation suite
         run: |
           set -euo pipefail
           mkdir -p eval-results
           ./target/release/agent-eval suite \
-            --families "${{ steps.params.outputs.families }}" \
-            --format all \
+            --families "${{ matrix.family }}" \
+            --format json \
             --output-dir eval-results \
-            --trials     "${{ steps.params.outputs.trials }}" \
-            --variation-delay-ms "${{ steps.params.outputs.delay }}"
+            --trials     "${{ needs.setup.outputs.trials }}" \
+            --variation-delay-ms "${{ needs.setup.outputs.delay }}"
 
-      # ── Prepare GitHub Pages artifact ───────────────────────────────────────
-      # Run even on eval failure — the orchestrator writes each per-agent JSON
-      # immediately on completion, so partial results exist and are worth keeping.
-      - name: Prepare Pages artifact
+      # ── Upload JSON results — aggregate job merges them later ───────────────
+      # Runs even on eval failure so partial results are preserved.
+      - name: Upload per-family results
         if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-reports-${{ matrix.family }}
+          path: eval-results/*.json
+          if-no-files-found: warn
+
+  # ── Merge per-family JSON files into a single comparison report ───────────────
+  # Runs after all matrix jobs complete (even if some failed) so partial
+  # results are included in the Pages artifact.
+  aggregate:
+    name: Aggregate results
+    needs: [setup, run-eval]
+    runs-on: ubuntu-22.04
+    if: always()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.setup.outputs.ref }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-eval-pages-ubuntu-22.04
+          cache-targets: true
+
+      - name: Build agent-eval
+        run: cargo build --release
+
+      # ── Collect all per-family JSON artifacts into one directory ─────────────
+      - name: Download per-family results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: eval-reports-*
+          path: all-reports
+          merge-multiple: true
+
+      # ── Generate HTML dashboard + combined JSON from all family results ───────
+      - name: Generate comparison report
         run: |
           set -euo pipefail
-          # Suppress Jekyll processing — the HTML is already rendered.
-          touch eval-results/.nojekyll
+          mkdir -p pages-output
+          ./target/release/agent-eval report \
+            --from all-reports \
+            --format all \
+            --output-dir pages-output
 
-          # Promote the comparison / main HTML to index.html so Pages serves it
-          # as the landing page.
-          if [ ! -f eval-results/index.html ]; then
-            html_file="$(find eval-results -maxdepth 1 -name '*.html' | sort | head -1)"
+      # ── Prepare GitHub Pages artifact ───────────────────────────────────────
+      - name: Prepare Pages artifact
+        run: |
+          set -euo pipefail
+          touch pages-output/.nojekyll
+
+          if [ ! -f pages-output/index.html ]; then
+            html_file="$(find pages-output -maxdepth 1 -name '*.html' | sort | head -1)"
             if [ -n "$html_file" ]; then
-              cp "$html_file" eval-results/index.html
-              echo "Promoted ${html_file} → eval-results/index.html"
+              cp "$html_file" pages-output/index.html
+              echo "Promoted ${html_file} → pages-output/index.html"
             else
-              # Fallback: generate a minimal listing page.
               python3 - <<'PY'
           from pathlib import Path
 
-          out = Path("eval-results")
+          out = Path("pages-output")
           files = sorted(
               f.name for f in out.iterdir()
               if f.is_file() and f.suffix in (".json", ".html") and f.name != "index.html"
@@ -290,25 +347,27 @@ jobs:
             echo
             echo "| Parameter | Value |"
             echo "|-----------|-------|"
-            echo "| Families  | \`${{ steps.params.outputs.families }}\` |"
-            echo "| Trials    | \`${{ steps.params.outputs.trials }}\` |"
-            echo "| Delay ms  | \`${{ steps.params.outputs.delay }}\` |"
+            echo "| Trigger   | \`${{ github.event_name }}\` |"
+            echo "| Families  | \`${{ github.event.inputs.families || 'gestura,claude-code,opencode' }}\` |"
+            echo "| Trials    | \`${{ needs.setup.outputs.trials }}\` |"
+            echo "| Delay ms  | \`${{ needs.setup.outputs.delay }}\` |"
             echo
             echo "### Generated files"
             echo
-            find eval-results -maxdepth 1 -type f | sort | \
-              sed 's|^eval-results/||' | awk '{print "- `" $0 "`"}'
+            find pages-output -maxdepth 1 -type f | sort | \
+              sed 's|^pages-output/||' | awk '{print "- `" $0 "`"}'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Pages artifact
         if: always()
         uses: actions/upload-pages-artifact@v3
         with:
-          path: eval-results
+          path: pages-output
 
+  # ── Deploy to GitHub Pages ─────────────────────────────────────────────────────
   deploy:
     name: Deploy to GitHub Pages
-    needs: run-eval
+    needs: aggregate
     runs-on: ubuntu-latest
     environment:
       name: github-pages
