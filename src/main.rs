@@ -778,10 +778,7 @@ fn make_terminal_progress(quiet: bool) -> ProgressCallback {
     })
 }
 
-fn plain_progress_event(
-    counts: &Mutex<HashMap<String, (usize, usize)>>,
-    event: ProgressEvent,
-) {
+fn plain_progress_event(counts: &Mutex<HashMap<String, (usize, usize)>>, event: ProgressEvent) {
     match event {
         ProgressEvent::ProfileStarted {
             agent_id,
