@@ -526,7 +526,9 @@ impl CliEvalRunner {
         };
         let stderr_bytes = stderr_rx.recv_timeout(io_drain).unwrap_or_default();
 
-        let raw_stdout = String::from_utf8_lossy(&raw_stdout_bytes).trim().to_string();
+        let raw_stdout = String::from_utf8_lossy(&raw_stdout_bytes)
+            .trim()
+            .to_string();
         let stderr = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
 
         // Strip configured response prefix (e.g. "Assistant: " labels).
