@@ -61,7 +61,6 @@ env:
 
 jobs:
   # ── Resolve parameters and build the family matrix ────────────────────────────
-  # Runs first so all downstream jobs share the same resolved values.
   setup:
     name: Resolve parameters
     runs-on: ubuntu-latest
@@ -98,6 +97,49 @@ jobs:
           echo "Gestura tag  : ${gestura_tag}"
           echo "Ref          : ${ref}"
 
+  # ── Build agent-eval binary once, share across all matrix jobs ─────────────────
+  # Compiling Rust peaks at 3–4 GB of RAM.  Building here — before any eval jobs
+  # start — means the 7 GB runner is free for agent subprocess invocations during
+  # the eval phase.  The compiled binary is uploaded as an artifact and downloaded
+  # by each matrix job and the aggregate job.
+  build:
+    name: Build agent-eval
+    needs: setup
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.setup.outputs.ref }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ca-certificates \
+            libasound2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-eval-pages-ubuntu-22.04
+          cache-targets: true
+
+      - name: Build agent-eval
+        run: cargo build --release
+
+      - name: Upload agent-eval binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-eval-binary
+          path: target/release/agent-eval
+          retention-days: 1
+
   # ── Per-family evaluation — runs in parallel, one job per family ──────────────
   # One family: 3 modes × 14 scenarios × 3 variations × 3 trials ≈ 40–90 min.
   # 150-min timeout gives a comfortable margin; families run concurrently so
@@ -105,7 +147,7 @@ jobs:
   # the sum (~2.5–3.5 h) that caused the "runner lost communication" crash.
   run-eval:
     name: Evaluate ${{ matrix.family }}
-    needs: setup
+    needs: [setup, build]
     runs-on: ubuntu-22.04
     timeout-minutes: 150
     strategy:
@@ -118,6 +160,13 @@ jobs:
       AUGMENT_DISABLE_AUTO_UPDATE: "1"
       CODEX_HOME: "/home/runner/.codex"
       RUST_LOG: "warn"
+      # ── Redirect Node.js CLI home dirs to /tmp so logs and caches don't
+      # accumulate across hundreds of subprocess invocations and fill the
+      # runner's 14 GB disk.  These vars are inherited by every subprocess
+      # because cli_runner.rs inherits the parent env.
+      CLAUDE_HOME: "/tmp/claude-eval"
+      XDG_CACHE_HOME: "/tmp/xdg-cache"
+      XDG_DATA_HOME: "/tmp/xdg-data"
       # ── API keys — secrets are only accessible at job/step level, not
       # workflow level. Defined here so every step and subprocess inherits them.
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -142,6 +191,19 @@ jobs:
           fi
           if [ "$failed" -eq 1 ]; then exit 1; fi
 
+      # ── Swap space — GitHub ubuntu-22.04 runners have 7 GB RAM with no swap.
+      # Node.js CLIs (claude, opencode) have higher per-invocation memory
+      # overhead than native binaries.  6 GB of swap prevents the OOM killer
+      # from terminating the runner mid-suite.
+      - name: Add swap space
+        run: |
+          sudo fallocate -l 6G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo "Memory + swap:"
+          free -h
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -163,7 +225,6 @@ jobs:
             libasound2
 
       # ── Node.js 22 LTS via NodeSource (mirrors Containerfile exactly) ───────
-      # Auggie requires Node 22+; Claude Code and OpenCode also support it.
       - name: Install Node.js 22 via NodeSource
         run: |
           curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
@@ -208,27 +269,22 @@ jobs:
             > "${HOME}/.gestura/config.yaml"
           gestura exec "Reply with only the single word: OK"
 
-      # ── Rust / agent-eval build ─────────────────────────────────────────────
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      # ── Download pre-built binary (no Rust compilation in eval jobs) ─────────
+      - name: Download agent-eval binary
+        uses: actions/download-artifact@v4
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          name: agent-eval-binary
+          path: ./bin
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: v1-eval-pages-ubuntu-22.04
-          cache-targets: true
-
-      - name: Build agent-eval
-        run: cargo build --release
+      - name: Make agent-eval executable
+        run: chmod +x ./bin/agent-eval
 
       # ── Run this family's evaluation ─────────────────────────────────────────
       - name: Run evaluation suite
         run: |
           set -euo pipefail
           mkdir -p eval-results
-          ./target/release/agent-eval suite \
+          ./bin/agent-eval suite \
             --families "${{ matrix.family }}" \
             --format json \
             --output-dir eval-results \
@@ -246,11 +302,9 @@ jobs:
           if-no-files-found: warn
 
   # ── Merge per-family JSON files into a single comparison report ───────────────
-  # Runs after all matrix jobs complete (even if some failed) so partial
-  # results are included in the Pages artifact.
   aggregate:
     name: Aggregate results
-    needs: [setup, run-eval]
+    needs: [setup, build, run-eval]
     runs-on: ubuntu-22.04
     if: always()
     steps:
@@ -259,19 +313,14 @@ jobs:
         with:
           ref: ${{ needs.setup.outputs.ref }}
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Download agent-eval binary
+        uses: actions/download-artifact@v4
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          name: agent-eval-binary
+          path: ./bin
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: v1-eval-pages-ubuntu-22.04
-          cache-targets: true
-
-      - name: Build agent-eval
-        run: cargo build --release
+      - name: Make agent-eval executable
+        run: chmod +x ./bin/agent-eval
 
       # ── Collect all per-family JSON artifacts into one directory ─────────────
       - name: Download per-family results
@@ -286,7 +335,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p pages-output
-          ./target/release/agent-eval report \
+          ./bin/agent-eval report \
             --from all-reports \
             --format all \
             --output-dir pages-output
