@@ -504,12 +504,30 @@ impl CliEvalRunner {
             }
         };
 
-        let raw_stdout = String::from_utf8_lossy(&stdout_rx.recv().unwrap_or_default())
-            .trim()
-            .to_string();
-        let stderr = String::from_utf8_lossy(&stderr_rx.recv().unwrap_or_default())
-            .trim()
-            .to_string();
+        // Drain stdout/stderr with a hard deadline.  If a grandchild inherited the
+        // pipe write-end and changed its process group (escaping our kill sweeps),
+        // recv() would block forever even though the main process has already exited.
+        // 10 s is generous for normal pipe drain; anything slower means a stuck
+        // grandchild — log it and move on so the eval doesn't hang indefinitely.
+        let io_drain = Duration::from_secs(10);
+
+        let raw_stdout_bytes = match stdout_rx.recv_timeout(io_drain) {
+            Ok(b) => b,
+            Err(_) => {
+                warn!(
+                    scenario = %scenario.id,
+                    variation = %variation.id,
+                    pid = child_pid,
+                    "stdout pipe still open {}s after process exit — orphaned grandchild likely",
+                    io_drain.as_secs(),
+                );
+                Vec::new()
+            }
+        };
+        let stderr_bytes = stderr_rx.recv_timeout(io_drain).unwrap_or_default();
+
+        let raw_stdout = String::from_utf8_lossy(&raw_stdout_bytes).trim().to_string();
+        let stderr = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
 
         // Strip configured response prefix (e.g. "Assistant: " labels).
         let stdout = if let Some(ref prefix) = cfg.subprocess.response_strip_prefix {
