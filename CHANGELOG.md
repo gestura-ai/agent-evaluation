@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## UnReleased
 
+### Changed
+
+- Fixed an infinite loop in the evaluation pipeline.
+
+## [0.2.6] - 2026-04-18
+
 ### Added
 
 - display pipeline errors in evaluation logs and improve child process cleanup on timeout
