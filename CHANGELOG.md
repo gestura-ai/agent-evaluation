@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## UnReleased
 
+### Added
+
+- `kill_process_tree` added to `ChildProcess` trait and `handle_timeout`
+
+## [0.2.6] - 2026-04-18
+
 ### Changed
 
 - Fixed an infinite loop in the evaluation pipeline.
