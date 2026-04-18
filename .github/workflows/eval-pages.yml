@@ -250,7 +250,10 @@ jobs:
           opencode --version
 
       # ── Gestura CLI via official install script (mirrors Containerfile) ─────
+      # Only the gestura family runs gestura profiles — skip for other families
+      # to avoid parallel download contention against GitHub releases.
       - name: Install gestura CLI
+        if: matrix.family == 'gestura'
         env:
           GESTURA_TAG: ${{ needs.setup.outputs.gestura_tag }}
         run: |
@@ -264,6 +267,7 @@ jobs:
 
       # ── Smoke-test gestura authentication directly ──────────────────────────
       - name: Smoke-test gestura authentication
+        if: matrix.family == 'gestura'
         run: |
           set -euo pipefail
           _key="${GESTURA_ANTHROPIC_API_KEY:-${ANTHROPIC_API_KEY:-}}"
@@ -380,7 +384,10 @@ jobs:
         run: chmod +x ./bin/agent-eval
 
       # ── Collect all per-family JSON artifacts into one directory ─────────────
+      # if: always() — runs even when some matrix jobs failed or were skipped so
+      # whatever partial results were uploaded are still collected.
       - name: Download per-family results
+        if: always()
         uses: actions/download-artifact@v4
         with:
           pattern: eval-reports-*
@@ -388,7 +395,12 @@ jobs:
           merge-multiple: true
 
       # ── Generate HTML dashboard + combined JSON from all family results ───────
+      # if: always() so this runs even when the download found no files.
+      # continue-on-error so a missing/empty all-reports dir doesn't skip the
+      # Pages artifact preparation step that follows.
       - name: Generate comparison report
+        if: always()
+        continue-on-error: true
         run: |
           set -euo pipefail
           mkdir -p pages-output
@@ -398,9 +410,13 @@ jobs:
             --output-dir pages-output
 
       # ── Prepare GitHub Pages artifact ───────────────────────────────────────
+      # if: always() — must run even when report generation partially failed so
+      # we always upload something deployable (at minimum a listing page).
       - name: Prepare Pages artifact
+        if: always()
         run: |
           set -euo pipefail
+          mkdir -p pages-output
           touch pages-output/.nojekyll
 
           if [ ! -f pages-output/index.html ]; then
@@ -460,7 +476,7 @@ jobs:
             echo
             echo "### Generated files"
             echo
-            find pages-output -maxdepth 1 -type f | sort | \
+            find pages-output -maxdepth 1 -type f 2>/dev/null | sort | \
               sed 's|^pages-output/||' | awk '{print "- `" $0 "`"}'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -474,6 +490,11 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: aggregate
+    # Run whenever aggregate ran (success or failure) — the implicit success()
+    # condition causes GitHub to silently skip this job with no explanation when
+    # aggregate has any failing step.  Skipped only when aggregate itself was
+    # skipped (e.g. the entire workflow was cancelled before it started).
+    if: always() && needs.aggregate.result != 'skipped'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

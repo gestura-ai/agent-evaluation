@@ -1,6 +1,6 @@
 [package]
 name = "agent-evaluation"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2024"
 license = "LicenseRef-Gestura-Prosperity-1.0"
 authors = ["Gestura AI LLC <dev@gestura.ai>"]

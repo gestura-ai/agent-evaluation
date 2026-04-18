@@ -672,14 +672,6 @@ fn run_suite(args: SuiteArgs) {
         }
     }
 
-    // Exit non-zero if any agent had failures (for CI).
-    let any_failed = comparison
-        .leaderboard
-        .iter()
-        .any(|r| r.passed_variations < r.total_variations);
-    if !args.dry_run && any_failed {
-        std::process::exit(1);
-    }
 }
 
 // ─── `report` subcommand ──────────────────────────────────────────────────────
