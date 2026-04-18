@@ -155,7 +155,7 @@ jobs:
               github.event.client_payload.tag ||
               github.event.inputs.gestura_tag ||
               vars.GESTURA_CLI_TAG ||
-              'v0.11.1'
+              'v0.11.2'
             }}
         run: |
           set -euo pipefail
