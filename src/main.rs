@@ -415,13 +415,11 @@ fn run_single_agent(args: Cli, suite: EvalScenarioSuite) {
                 trial,
                 total_trials,
                 ..
-            } => {
-                if !quiet_mode && total_trials > 1 {
-                    eprintln!(
-                        "  … {}/{} trial {}/{}…",
-                        scenario_id, variation_id, trial, total_trials
-                    );
-                }
+            } if !quiet_mode && total_trials > 1 => {
+                eprintln!(
+                    "  … {}/{} trial {}/{}…",
+                    scenario_id, variation_id, trial, total_trials
+                );
             }
             ProgressEvent::RateLimitRetry {
                 scenario_id,
