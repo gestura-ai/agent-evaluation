@@ -49,6 +49,15 @@ args_prefix = ["--dangerously-skip-permissions", "-p"]
 # ANTHROPIC_API_KEY must be set in the calling environment.
 # claude reads ANTHROPIC_MODEL if you prefer env-based model pinning.
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
+# Redirect Claude Code's home and XDG dirs to /mnt/eval-home (the large Azure
+# ephemeral disk on GitHub-hosted runners) so session logs, project caches, and
+# agentic-loop scratch files don't accumulate on the 14 GB root partition.
+# In non-CI environments /mnt/eval-home may not exist; claude will fall back to
+# creating it on first use.
+HOME            = "/mnt/eval-home"
+XDG_CACHE_HOME  = "/mnt/eval-home/.cache"
+XDG_DATA_HOME   = "/mnt/eval-home/.local/share"
+XDG_CONFIG_HOME = "/mnt/eval-home/.config"
 
 [thresholds]
 min_variation_score    = 0.85

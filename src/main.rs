@@ -409,6 +409,20 @@ fn run_single_agent(args: Cli, suite: EvalScenarioSuite) {
                     );
                 }
             }
+            ProgressEvent::TrialStarted {
+                scenario_id,
+                variation_id,
+                trial,
+                total_trials,
+                ..
+            } => {
+                if !quiet_mode && total_trials > 1 {
+                    eprintln!(
+                        "  … {}/{} trial {}/{}…",
+                        scenario_id, variation_id, trial, total_trials
+                    );
+                }
+            }
             ProgressEvent::RateLimitRetry {
                 scenario_id,
                 variation_id,
@@ -819,6 +833,25 @@ fn plain_progress_event(counts: &Mutex<HashMap<String, (usize, usize)>>, event: 
             );
         }
 
+        ProgressEvent::TrialStarted {
+            agent_id,
+            scenario_id,
+            variation_id,
+            trial,
+            total_trials,
+        } => {
+            if total_trials > 1 {
+                let (done, total) = {
+                    let map = counts.lock().unwrap();
+                    map.get(&agent_id).copied().unwrap_or((0, 0))
+                };
+                eprintln!(
+                    "  … [{}] [{:>2}/{}] {}/{} trial {}/{}",
+                    agent_id, done + 1, total, scenario_id, variation_id, trial, total_trials,
+                );
+            }
+        }
+
         ProgressEvent::RateLimitRetry {
             scenario_id,
             variation_id,
@@ -867,7 +900,7 @@ fn handle_progress_event(st: &mut ProgressState, event: ProgressEvent) {
             let pb = st.mp.add(ProgressBar::new(total_variations as u64));
             pb.set_style(
                 ProgressStyle::with_template(
-                    "  {prefix:<26} {bar:28.cyan/238} {pos:>3}/{len:>3} {percent:>3}%  {elapsed_precise}",
+                    "  {prefix:<26} {bar:28.cyan/238} {pos:>3}/{len:>3} {percent:>3}%  {elapsed_precise}  {msg}",
                 )
                 .unwrap_or_else(|_| ProgressStyle::default_bar())
                 .progress_chars("█▉▊▋▌▍▎▏ "),
@@ -876,6 +909,22 @@ fn handle_progress_event(st: &mut ProgressState, event: ProgressEvent) {
             pb.set_prefix(prefix);
             pb.tick(); // force initial draw so suspend/eprintln calls below work correctly
             st.bars.insert(agent_id, pb);
+        }
+
+        ProgressEvent::TrialStarted {
+            agent_id,
+            scenario_id,
+            variation_id,
+            trial,
+            total_trials,
+        } => {
+            if total_trials > 1 {
+                if let Some(pb) = st.bars.get(&agent_id) {
+                    pb.set_message(format!(
+                        "{scenario_id}/{variation_id} t{trial}/{total_trials}"
+                    ));
+                }
+            }
         }
 
         ProgressEvent::VariationDone {
@@ -899,6 +948,7 @@ fn handle_progress_event(st: &mut ProgressState, event: ProgressEvent) {
                     );
                     st.mp.suspend(|| eprintln!("{msg}"));
                 }
+                pb.set_message(String::new());
                 pb.inc(1);
             }
         }

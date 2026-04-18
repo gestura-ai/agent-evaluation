@@ -21,6 +21,21 @@ pub enum ProgressEvent {
         total_variations: usize,
     },
 
+    /// A single trial of a variation is about to start.
+    ///
+    /// Fires immediately before the subprocess is launched.  In CI (non-TTY),
+    /// this gives a heartbeat line for every trial so a 120 s timeout per trial
+    /// does not produce 6+ minutes of total silence on a 3-trial variation.
+    TrialStarted {
+        agent_id: String,
+        scenario_id: String,
+        variation_id: String,
+        /// 1-based trial index.
+        trial: u32,
+        /// Total trials configured for this variation.
+        total_trials: u32,
+    },
+
     /// A single variation has finished evaluation.
     VariationDone {
         agent_id: String,

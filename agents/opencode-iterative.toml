@@ -54,6 +54,10 @@ args_prefix = ["run", "--dangerously-skip-permissions", "--model", "anthropic/cl
 
 [subprocess.env]
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
+HOME            = "/mnt/eval-home"
+XDG_CACHE_HOME  = "/mnt/eval-home/.cache"
+XDG_DATA_HOME   = "/mnt/eval-home/.local/share"
+XDG_CONFIG_HOME = "/mnt/eval-home/.config"
 
 [thresholds]
 min_variation_score    = 0.75

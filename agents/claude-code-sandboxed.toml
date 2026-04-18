@@ -49,6 +49,10 @@ args_prefix = ["--allowedTools", "", "-p"]
 
 [subprocess.env]
 ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
+HOME            = "/mnt/eval-home"
+XDG_CACHE_HOME  = "/mnt/eval-home/.cache"
+XDG_DATA_HOME   = "/mnt/eval-home/.local/share"
+XDG_CONFIG_HOME = "/mnt/eval-home/.config"
 
 [thresholds]
 min_variation_score    = 0.70

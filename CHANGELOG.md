@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Fix agent elapse time metric recording
+- resolve agents from crashing in pipeline for automated eval
+
+## [0.2.3] - 2026-04-18
+
+### Added
+
+- Fix agent elapse time metric recording
 
 ## [0.2.2] - 2026-04-17
 

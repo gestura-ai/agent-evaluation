@@ -203,6 +203,16 @@ impl CliEvalRunner {
                 );
             }
 
+            if let Some(ref cb) = self.options.progress {
+                cb(ProgressEvent::TrialStarted {
+                    agent_id: cfg.agent.id.clone(),
+                    scenario_id: scenario.id.clone(),
+                    variation_id: variation.id.clone(),
+                    trial: (trial_idx + 1) as u32,
+                    total_trials: trials as u32,
+                });
+            }
+
             outcomes.push(self.run_trial(scenario, variation));
 
             // Throttle between trials (same budget as inter-variation delay).

@@ -273,6 +273,59 @@ jobs:
             > "${HOME}/.gestura/config.yaml"
           gestura exec "Reply with only the single word: OK"
 
+      # ── Scratch directory on /mnt (large ephemeral Azure disk) ─────────────────
+      # Node.js CLIs (claude, opencode) write session logs, project caches, and
+      # agentic-loop scratch files to $HOME on every invocation.  Over 126+
+      # subprocess calls per profile this fills the 14 GB root partition.
+      # The agent profiles redirect HOME and XDG dirs here via [subprocess.env],
+      # so all CLI writes land on /mnt (~50 GB free after the 6 GB swapfile).
+      - name: Create eval scratch directory on /mnt
+        run: sudo install -d -o runner -g runner /mnt/eval-home
+
+      # ── Pre-flight CLI validation ─────────────────────────────────────────────
+      # Run a minimal prompt through each Node.js CLI before committing to the
+      # full suite.  Catches broken CLI interfaces (changed flags, missing config,
+      # first-run setup wizards) within 60 s rather than after 4+ hours of
+      # 120 s-per-trial timeouts.  Non-fatal: the eval still runs and records
+      # failures so the Pages report shows what broke.
+      - name: Pre-flight CLI validation
+        env:
+          HOME: /mnt/eval-home
+        run: |
+          family="${{ matrix.family }}"
+          ok=0
+          case "$family" in
+            claude-code)
+              echo "=== pre-flight: claude-code ==="
+              if timeout 60 claude --dangerously-skip-permissions -p \
+                   "Reply with the single word: OK" 2>&1; then
+                echo "claude-code: pre-flight OK"
+                ok=1
+              else
+                echo "WARNING: claude-code pre-flight failed — check CLI version/flags"
+                claude --version 2>&1 || true
+              fi
+              ;;
+            opencode)
+              echo "=== pre-flight: opencode ==="
+              if timeout 60 opencode run --dangerously-skip-permissions \
+                   --model "anthropic/claude-sonnet-4-6" \
+                   "Reply with the single word: OK" 2>&1; then
+                echo "opencode: pre-flight OK"
+                ok=1
+              else
+                echo "WARNING: opencode pre-flight failed — check CLI version/flags"
+                opencode --version 2>&1 || true
+                opencode --help 2>&1 | head -30 || true
+              fi
+              ;;
+            *)
+              echo "=== pre-flight: $family (no CLI check needed) ==="
+              ok=1
+              ;;
+          esac
+          echo "pre-flight result: $ok"
+
       # ── Download pre-built binary (no Rust compilation in eval jobs) ─────────
       - name: Download agent-eval binary
         uses: actions/download-artifact@v4
