@@ -756,16 +756,109 @@ struct ProgressState {
 }
 
 fn make_terminal_progress(quiet: bool) -> ProgressCallback {
+    // When stderr is not a TTY (Docker without -t, CI pipes, redirected output)
+    // indicatif sets its draw target to hidden.  In that state mp.suspend() can
+    // silently drop output even though eprintln! is called inside the closure.
+    // Bypass indicatif entirely and write plain lines directly to stderr, which
+    // is always an unbuffered fd write visible in docker logs / CI output.
+    if !std::io::IsTerminal::is_terminal(&std::io::stderr()) {
+        let counts: Arc<Mutex<HashMap<String, (usize, usize)>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        return Arc::new(move |event| plain_progress_event(&counts, event));
+    }
+
     let state = Arc::new(Mutex::new(ProgressState {
         mp: MultiProgress::new(),
         bars: HashMap::new(),
         quiet,
     }));
-
     Arc::new(move |event| {
         let mut st = state.lock().unwrap();
         handle_progress_event(&mut st, event);
     })
+}
+
+fn plain_progress_event(
+    counts: &Mutex<HashMap<String, (usize, usize)>>,
+    event: ProgressEvent,
+) {
+    match event {
+        ProgressEvent::ProfileStarted {
+            agent_id,
+            total_variations,
+        } => {
+            counts
+                .lock()
+                .unwrap()
+                .insert(agent_id.clone(), (0, total_variations));
+            eprintln!("[{}] starting ({} variations)", agent_id, total_variations);
+        }
+
+        ProgressEvent::VariationDone {
+            agent_id,
+            scenario_id,
+            variation_id,
+            passed,
+            score,
+            duration_ms,
+        } => {
+            let (done, total) = {
+                let mut map = counts.lock().unwrap();
+                let e = map.entry(agent_id.clone()).or_insert((0, 0));
+                e.0 += 1;
+                (e.0, e.1)
+            };
+            let icon = if passed { "✓" } else { "✗" };
+            eprintln!(
+                "  {} [{}] [{:>2}/{}] {}/{} {:>5.1}% ({:.1}s)",
+                icon,
+                agent_id,
+                done,
+                total,
+                scenario_id,
+                variation_id,
+                score * 100.0,
+                duration_ms as f64 / 1000.0,
+            );
+        }
+
+        ProgressEvent::RateLimitRetry {
+            scenario_id,
+            variation_id,
+            attempt,
+            max_attempts,
+            wait_secs,
+            ..
+        } => {
+            eprintln!(
+                "  ⏸ [{}/{}] rate-limited (429) — waiting {}s  [retry {}/{}]",
+                scenario_id,
+                variation_id,
+                wait_secs,
+                attempt,
+                max_attempts - 1,
+            );
+        }
+
+        ProgressEvent::ProfileFinished { agent_id, report } => {
+            let s = &report.summary;
+            eprintln!(
+                "[{}] done — {:.1}% ({}/{} passed)",
+                agent_id,
+                s.overall_score * 100.0,
+                s.passed_variations,
+                s.total_variations,
+            );
+        }
+
+        ProgressEvent::ProfileSkipped { agent_id, reason } => {
+            eprintln!("  ⊘ [{}] skipped — {}", agent_id, reason);
+        }
+
+        ProgressEvent::SuiteFinished { elapsed_secs } => {
+            eprintln!("\n  ✓ Suite finished in {:.1}s", elapsed_secs);
+        }
+    }
 }
 
 fn handle_progress_event(st: &mut ProgressState, event: ProgressEvent) {
@@ -784,6 +877,7 @@ fn handle_progress_event(st: &mut ProgressState, event: ProgressEvent) {
             );
             let prefix = truncate_id(&agent_id, 24);
             pb.set_prefix(prefix);
+            pb.tick(); // force initial draw so suspend/eprintln calls below work correctly
             st.bars.insert(agent_id, pb);
         }
 
@@ -806,7 +900,7 @@ fn handle_progress_event(st: &mut ProgressState, event: ProgressEvent) {
                         score * 100.0,
                         duration_ms as f64 / 1000.0,
                     );
-                    pb.println(msg);
+                    st.mp.suspend(|| eprintln!("{msg}"));
                 }
                 pb.inc(1);
             }
@@ -832,7 +926,7 @@ fn handle_progress_event(st: &mut ProgressState, event: ProgressEvent) {
         }
 
         ProgressEvent::RateLimitRetry {
-            agent_id,
+            agent_id: _,
             scenario_id,
             variation_id,
             attempt,
@@ -848,32 +942,26 @@ fn handle_progress_event(st: &mut ProgressState, event: ProgressEvent) {
                 attempt,
                 max_attempts - 1,
             );
-            if let Some(pb) = st.bars.get(&agent_id) {
-                pb.println(msg);
-            } else {
-                st.mp.println(msg).ok();
-            }
+            st.mp.suspend(|| eprintln!("{msg}"));
         }
 
         ProgressEvent::ProfileSkipped { agent_id, reason } => {
-            st.mp
-                .println(format!(
-                    "  {} {:<26} — {}",
-                    "⊘".dimmed(),
-                    agent_id.dimmed(),
-                    reason.dimmed()
-                ))
-                .ok();
+            let msg = format!(
+                "  {} {:<26} — {}",
+                "⊘".dimmed(),
+                agent_id.dimmed(),
+                reason.dimmed()
+            );
+            st.mp.suspend(|| eprintln!("{msg}"));
         }
 
         ProgressEvent::SuiteFinished { elapsed_secs } => {
-            st.mp
-                .println(format!(
-                    "\n  {} Suite finished in {:.1}s",
-                    "✓".green().bold(),
-                    elapsed_secs
-                ))
-                .ok();
+            let msg = format!(
+                "\n  {} Suite finished in {:.1}s",
+                "✓".green().bold(),
+                elapsed_secs
+            );
+            st.mp.suspend(|| eprintln!("{msg}"));
         }
     }
 }
