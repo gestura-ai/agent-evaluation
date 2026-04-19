@@ -450,8 +450,11 @@ impl CliEvalRunner {
         // compile or test it.
         let invocation_cwd = std::env::temp_dir()
             .join(format!("agent-eval-{}", uuid::Uuid::new_v4()));
-        let _ = std::fs::create_dir_all(&invocation_cwd);
-        cmd.current_dir(&invocation_cwd);
+        if let Err(e) = std::fs::create_dir_all(&invocation_cwd) {
+            warn!(path = %invocation_cwd.display(), error = %e, "failed to create invocation CWD — subprocess will inherit harness CWD");
+        } else {
+            cmd.current_dir(&invocation_cwd);
+        }
 
         // Own process group so a timeout kill reaches grandchildren (e.g. opencode
         // spawning a .opencode child that holds the stalled TCP connection).
@@ -529,6 +532,7 @@ impl CliEvalRunner {
                     pid = child_pid,
                     "agent subprocess timed out — killed process group"
                 );
+                let _ = std::fs::remove_dir_all(&invocation_cwd);
                 return (
                     String::new(),
                     Some(format!("timeout after {}s", cfg.execution.timeout_secs)),
@@ -555,6 +559,8 @@ impl CliEvalRunner {
             }
         };
         let stderr_bytes = stderr_rx.recv_timeout(io_drain).unwrap_or_default();
+
+        let _ = std::fs::remove_dir_all(&invocation_cwd);
 
         let raw_stdout = String::from_utf8_lossy(&raw_stdout_bytes)
             .trim()
