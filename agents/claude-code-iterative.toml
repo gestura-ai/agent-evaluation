@@ -43,7 +43,7 @@ retries               = 1
 
 [subprocess]
 bin         = "claude"
-args_prefix = ["-p"]      # no --dangerously-skip-permissions → gates are active
+args_prefix = ["--bare", "--permission-mode", "dontAsk", "-p"]      # no --dangerously-skip-permissions → gates are active
 
 [subprocess.env]
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
