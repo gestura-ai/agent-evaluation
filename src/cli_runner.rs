@@ -429,10 +429,7 @@ impl CliEvalRunner {
         // scenarios. Docker has none of these vars; stripping them makes CI
         // behaviour match Docker.
         for (key, _) in std::env::vars() {
-            if key == "CI"
-                || key.starts_with("GITHUB_")
-                || key.starts_with("RUNNER_")
-            {
+            if key == "CI" || key.starts_with("GITHUB_") || key.starts_with("RUNNER_") {
                 cmd.env_remove(&key);
             }
         }
@@ -448,8 +445,8 @@ impl CliEvalRunner {
         // directory during earlier variations; subsequent variations and profiles
         // then find that project, interpret it as context, and hang trying to
         // compile or test it.
-        let invocation_cwd = std::env::temp_dir()
-            .join(format!("agent-eval-{}", uuid::Uuid::new_v4()));
+        let invocation_cwd =
+            std::env::temp_dir().join(format!("agent-eval-{}", uuid::Uuid::new_v4()));
         if let Err(e) = std::fs::create_dir_all(&invocation_cwd) {
             warn!(path = %invocation_cwd.display(), error = %e, "failed to create invocation CWD — subprocess will inherit harness CWD");
         } else {
