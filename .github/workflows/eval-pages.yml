@@ -355,11 +355,10 @@ jobs:
 
       # ── Run this family's evaluation ─────────────────────────────────────────
       - name: Run evaluation suite
-        working-directory: /mnt/eval-home
         run: |
           set -euo pipefail
           mkdir -p eval-results
-          "$GITHUB_WORKSPACE/bin/agent-eval" suite \
+          ./bin/agent-eval suite \
             --families "${{ matrix.family }}" \
             --format json \
             --output-dir eval-results \
@@ -373,7 +372,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: eval-reports-${{ matrix.family }}
-          path: /mnt/eval-home/eval-results/*.json
+          path: eval-results/*.json
           if-no-files-found: warn
 
   # ── Merge per-family JSON files into a single comparison report ───────────────

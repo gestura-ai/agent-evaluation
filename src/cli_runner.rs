@@ -442,6 +442,17 @@ impl CliEvalRunner {
             cmd.env("GESTURA_TOOLS_ENABLED", "false");
         }
 
+        // Give each subprocess its own empty working directory so agents that
+        // scan CWD for project context find nothing. Without this, agents in
+        // full-permission mode write files (Cargo.toml, *.rs, etc.) to a shared
+        // directory during earlier variations; subsequent variations and profiles
+        // then find that project, interpret it as context, and hang trying to
+        // compile or test it.
+        let invocation_cwd = std::env::temp_dir()
+            .join(format!("agent-eval-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&invocation_cwd);
+        cmd.current_dir(&invocation_cwd);
+
         // Own process group so a timeout kill reaches grandchildren (e.g. opencode
         // spawning a .opencode child that holds the stalled TCP connection).
         #[cfg(unix)]
