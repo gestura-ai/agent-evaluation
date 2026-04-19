@@ -439,18 +439,28 @@ impl CliEvalRunner {
             cmd.env("GESTURA_TOOLS_ENABLED", "false");
         }
 
-        // Give each subprocess its own empty working directory so agents that
-        // scan CWD for project context find nothing. Without this, agents in
-        // full-permission mode write files (Cargo.toml, *.rs, etc.) to a shared
-        // directory during earlier variations; subsequent variations and profiles
-        // then find that project, interpret it as context, and hang trying to
-        // compile or test it.
-        let invocation_cwd =
+        // Give each subprocess its own isolated sandbox directory used as both
+        // CWD and HOME. Agents in full-permission mode write project files
+        // (Cargo.toml, *.rs, CLAUDE.md, session state) to CWD and HOME during
+        // evaluation; a shared directory lets those files accumulate and
+        // contaminate subsequent invocations and profiles (e.g. claude-code-full
+        // writes ~/.claude/ project memories that claude-code-sandboxed then
+        // reads, causing it to treat the session as an active project and hang).
+        // Using a fresh directory per invocation guarantees each subprocess
+        // starts with a clean slate regardless of what previous invocations wrote.
+        let invocation_dir =
             std::env::temp_dir().join(format!("agent-eval-{}", uuid::Uuid::new_v4()));
-        if let Err(e) = std::fs::create_dir_all(&invocation_cwd) {
-            warn!(path = %invocation_cwd.display(), error = %e, "failed to create invocation CWD — subprocess will inherit harness CWD");
+        if let Err(e) = std::fs::create_dir_all(&invocation_dir) {
+            warn!(path = %invocation_dir.display(), error = %e, "failed to create invocation sandbox dir — subprocess will inherit harness CWD/HOME");
         } else {
-            cmd.current_dir(&invocation_cwd);
+            cmd.current_dir(&invocation_dir);
+            // Override HOME and XDG dirs so all agent writes (config, cache,
+            // session state) land in the sandbox and are cleaned up afterward.
+            // Profile TOML values for HOME/XDG_* are intentionally superseded here.
+            cmd.env("HOME", &invocation_dir);
+            cmd.env("XDG_CACHE_HOME", invocation_dir.join(".cache"));
+            cmd.env("XDG_DATA_HOME", invocation_dir.join(".local/share"));
+            cmd.env("XDG_CONFIG_HOME", invocation_dir.join(".config"));
         }
 
         // Own process group so a timeout kill reaches grandchildren (e.g. opencode
@@ -529,7 +539,7 @@ impl CliEvalRunner {
                     pid = child_pid,
                     "agent subprocess timed out — killed process group"
                 );
-                let _ = std::fs::remove_dir_all(&invocation_cwd);
+                let _ = std::fs::remove_dir_all(&invocation_dir);
                 return (
                     String::new(),
                     Some(format!("timeout after {}s", cfg.execution.timeout_secs)),
@@ -557,7 +567,7 @@ impl CliEvalRunner {
         };
         let stderr_bytes = stderr_rx.recv_timeout(io_drain).unwrap_or_default();
 
-        let _ = std::fs::remove_dir_all(&invocation_cwd);
+        let _ = std::fs::remove_dir_all(&invocation_dir);
 
         let raw_stdout = String::from_utf8_lossy(&raw_stdout_bytes)
             .trim()
