@@ -286,6 +286,19 @@ jobs:
       - name: Create eval scratch directory on /mnt
         run: sudo install -d -o runner -g runner /mnt/eval-home
 
+      # ── Diagnostic: confirm Rust toolchain is absent from eval PATH ──────────
+      # GitHub ubuntu-22.04 runners ship Rust at /home/runner/.cargo/bin.
+      # Agents that receive Rust-related prompts (e.g. s4_error_handling/v2)
+      # may invoke `cargo test` if they find it on PATH, triggering crates.io
+      # network downloads that stall in D-state and block subprocess cleanup.
+      # The Docker runtime image has no Rust, so we strip it here to match.
+      - name: Remove Rust toolchain from eval PATH
+        run: |
+          echo "Rust before strip: cargo=$(which cargo 2>/dev/null || echo 'not found')  rustc=$(which rustc 2>/dev/null || echo 'not found')"
+          CLEAN_PATH="$(echo "$PATH" | tr ':' '\n' | grep -vE '(\.cargo|\.rustup|cargo/bin)' | tr '\n' ':' | sed 's/:$//')"
+          echo "PATH=${CLEAN_PATH}" >> "$GITHUB_ENV"
+          echo "Rust after strip:  cargo=$(which cargo 2>/dev/null || echo 'not found')"
+
       # ── Pre-flight CLI validation ─────────────────────────────────────────────
       # Run a minimal prompt through each Node.js CLI before committing to the
       # full suite.  Catches broken CLI interfaces (changed flags, missing config,

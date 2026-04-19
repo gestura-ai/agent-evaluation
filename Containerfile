@@ -221,6 +221,10 @@ RUN useradd --create-home --uid 1000 --shell /bin/bash eval
 RUN mkdir -p /reports && chown eval:eval /reports
 VOLUME /reports
 
+# Pre-create the eval home directory so agent subprocess profiles that set
+# HOME=/mnt/eval-home don't hit EACCES when the eval user can't write to /mnt.
+RUN mkdir -p /mnt/eval-home && chown eval:eval /mnt/eval-home
+
 WORKDIR /home/eval
 USER eval
 
