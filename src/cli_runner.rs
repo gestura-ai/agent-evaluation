@@ -419,6 +419,24 @@ impl CliEvalRunner {
             }
         }
 
+        // Strip CI/GitHub Actions env vars from subprocess invocations.
+        // Agents inherit the full parent environment by default, which in GitHub
+        // Actions includes CI=true, GITHUB_ACTIONS=true, GITHUB_WORKSPACE
+        // (pointing to a checkout containing Cargo.toml), and 20+ GITHUB_*/
+        // RUNNER_* vars. OpenCode detects these and alters behaviour — e.g.
+        // treating GITHUB_WORKSPACE as a project root and attempting to run
+        // tests or install toolchains — causing indefinite hangs on Rust
+        // scenarios. Docker has none of these vars; stripping them makes CI
+        // behaviour match Docker.
+        for (key, _) in std::env::vars() {
+            if key == "CI"
+                || key.starts_with("GITHUB_")
+                || key.starts_with("RUNNER_")
+            {
+                cmd.env_remove(&key);
+            }
+        }
+
         // Gestura-specific: disable tool execution when rubric says no tools.
         if !scenario.rubric.tools_enabled {
             cmd.env("GESTURA_TOOLS_ENABLED", "false");
