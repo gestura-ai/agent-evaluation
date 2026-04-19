@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Clean up env vars that cause agent misbehavior
+- Create an empty working directory for each subprocess
+- Remove the tree kill from the Ok path (main process exited normally)
+- Move the tree kill to the timeout path where it is needed
+
+## [0.2.10] - 2026-04-18
+
+### Changed
+
 - thread-safe pgrep-recursive tree kill implementation
 
 ## [0.2.9] - 2026-04-18
