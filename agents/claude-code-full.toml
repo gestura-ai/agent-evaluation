@@ -43,7 +43,7 @@ retries               = 1
 
 [subprocess]
 bin         = "claude"
-args_prefix = ["--bare", "--dangerously-skip-permissions", "-p"]
+args_prefix = ["--bare", "--permission-mode", "dontAsk", "-p"]
 
 [subprocess.env]
 # ANTHROPIC_API_KEY must be set in the calling environment.
